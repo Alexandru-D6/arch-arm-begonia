@@ -1,0 +1,79 @@
+// SPDX-License-Identifier: (GPL-2.0-only OR MIT)
+/* MTKAIF wiring follows Xiaomi's begonia-p-oss mt6785.dts. */
+/ {
+	sound {
+		compatible = "xiaomi,begonia-audio";
+		mediatek,platform = <&begonia_afe>;
+		mediatek,audio-codec = <&pmic>;
+		mediatek,accdet = <&begonia_accdet>;
+		vaud18-supply = <&mt6359_vaud18_ldo_reg>;
+		audio-routing = "AUX", "Headphone L",
+				"AUX", "Headphone R",
+				"AIN0", "Internal Mic";
+	};
+
+	begonia_afe: audio-controller {
+		compatible = "mediatek,mt6785-afe";
+		mediatek,audsys = <&audsys>;
+		mediatek,topckgen = <&topckgen>;
+		interrupt-parent = <&sysirq>;
+		interrupts = <GIC_SPI 184 IRQ_TYPE_LEVEL_LOW>;
+		power-domains = <&spm MT6785_POWER_DOMAIN_AUDIO>;
+		clocks = <&infracfg CLK_INFRA_AUDIO>,
+			 <&topckgen CLK_TOP_AUDIO>,
+			 <&topckgen CLK_TOP_AUDIO_INTBUS>,
+			 <&audsys CLK_AUD_AFE>,
+			 <&infracfg CLK_INFRA_AUDIO_26M>,
+			 <&audsys CLK_AUD_TML>;
+		clock-names = "infra", "audio", "bus", "afe", "mtkaif", "tml";
+		assigned-clocks = <&topckgen CLK_TOP_AUDIO>,
+				  <&topckgen CLK_TOP_AUDIO_INTBUS>;
+		assigned-clock-parents = <&clk26m>, <&topckgen CLK_TOP_MAINPLL_D2_D4>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&begonia_mtkaif_pins>;
+		#sound-dai-cells = <0>;
+	};
+};
+
+&pio {
+	begonia_mtkaif_pins: mtkaif-pins {
+		pins {
+			pinmux = <PINMUX_GPIO189__FUNC_AUD_CLK_MOSI>,
+				 <PINMUX_GPIO190__FUNC_AUD_SYNC_MOSI>,
+				 <PINMUX_GPIO191__FUNC_AUD_DAT_MOSI0>,
+				 <PINMUX_GPIO192__FUNC_AUD_DAT_MOSI1>,
+				 <PINMUX_GPIO193__FUNC_AUD_DAT_MISO0>,
+				 <PINMUX_GPIO194__FUNC_AUD_DAT_MISO1>,
+				 <PINMUX_GPIO143__FUNC_AUD_DAT_MOSI2>,
+				 <PINMUX_GPIO146__FUNC_AUD_DAT_MISO2>;
+			input-schmitt-enable;
+			bias-disable;
+		};
+	};
+};
+
+&mt6359codec {
+	/* Main analog microphone: AIN0, MICBIAS0 at 1.9 V, DCC. */
+	mediatek,mic-type-0 = <3>;
+	mediatek,mic-type-1 = <0>;
+	mediatek,mic-type-2 = <0>;
+};
+
+&pmic {
+	begonia_accdet: accdet {
+		compatible = "mediatek,mt6359-accdet";
+		mediatek,mic-vol = <8>;
+		mediatek,mic-mode = <2>;
+		mediatek,plugout-debounce = <1>;
+		mediatek,pwm-deb-setting = <0x500 0x500 1 0x1f0
+			0x800 0x1000 0x20 0x44 4 1 5 3 3 5 0xe>;
+		mediatek,eint-num = <0>;
+		mediatek,eint-use-ap = <0>;
+		mediatek,eint-detect-mode = <4>;
+		mediatek,eint-trig-mode = <1>;
+		mediatek,eint-use-ext-res = <4>;
+		mediatek,eint-comp-vth = <2>;
+		mediatek,key-mode = <0>;
+		mediatek,three-key-thr = <0 80 220 400>;
+	};
+};

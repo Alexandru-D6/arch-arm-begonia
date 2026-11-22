@@ -41,5 +41,14 @@ pciutils
 lm_sensors
 dmidecode
 
+# AUX output and internal microphone (WirePlumber 0.5+)
+alsa-utils
+alsa-ucm-conf
+pipewire
+pipewire-audio
+pipewire-alsa
+pipewire-pulse
+wireplumber
+
 # Arch ARM specific
 archlinuxarm-keyring

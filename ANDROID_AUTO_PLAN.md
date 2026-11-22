@@ -42,6 +42,17 @@ The reference port reports that the shared WMT/BTIF transport can power the Blue
 
 ### 4. Bring up the AUX output and internal microphone
 
+**Implementation:** the build now applies the tracked MT6785 DL1/VUL12/ADDA
+driver, begonia audio DTS and MT6359 jack-detector fixes. Workflow 02 installs
+the UCM2 and WirePlumber profiles and `begonia-mic-aux-test`. See
+[audio setup and acceptance](docs/AUDIO.md). On 2026-11-22 the handset passed
+five-second internal-mic recording and stereo AUX playback through ALSA and
+PipeWire; the user confirmed clear voice on both channels. AUX replugging and
+automatic audio startup after reboot were checked. See the
+[hardware test report](docs/AUDIO_TEST_RESULTS.md). A five-second concurrent tone
+playback/mic capture check also passed. Speech under car-volume playback,
+charging noise and far-end echo remain to be qualified.
+
 - Start with Xiaomi’s `mt6785-afe-pcm.c`, `mt6785-afe-clk.c`, `mt6785-dai-adda.c` and `mt6785-mt6359.c`. The vendor machine driver identifies the codec link and its MTKAIF calibration sequence. Compare these with the selected Linux kernel and reuse its ASoC and MT6359 drivers where available. Identify the missing audio front-end clocks, DMA/interrupts, pinctrl, power domains and codec links. Implement the minimal playback and capture paths in the kernel patch series and describe the board connections in the begonia DTS. [Xiaomi MT6785 audio sources](https://github.com/MiCode/Xiaomi_Kernel_OpenSource/tree/begonia-p-oss/sound/soc/mediatek/mt6785) · [Vendor machine driver](https://github.com/MiCode/Xiaomi_Kernel_OpenSource/blob/begonia-p-oss/sound/soc/mediatek/mt6785/mt6785-mt6359.c)
 - Expose a stereo headphone output and an independent handset mic input. Implement bias, gain, jack detection and routing for a three-pole AUX cable. Use the stock board routing as reference. The speaker amplifier is a separate path and can be deferred. Add an ALSA UCM2 profile and WirePlumber defaults to the rootfs so a jack event keeps the built-in mic selected. [Xiaomi jack and amplifier definitions](https://github.com/MiCode/Xiaomi_Kernel_OpenSource/blob/begonia-p-oss/arch/arm64/boot/dts/mediatek/xiaomi-mt6785-common.dtsi)
 

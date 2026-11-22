@@ -1,0 +1,32 @@
+--- a/sound/soc/mediatek/Kconfig
++++ b/sound/soc/mediatek/Kconfig
+@@ -319,3 +319,13 @@
+ 	  boards with the MT6357 PMIC codec.
+ 	  Select Y if you have such device.
+ 	  If unsure select "N".
++
++config SND_SOC_MT6785_BEGONIA
++	tristate "MT6785 begonia AUX and internal microphone"
++	depends on ARCH_MEDIATEK && MTK_PMIC_WRAP
++	select SND_SOC_MEDIATEK
++	select SND_SOC_MT6359
++	select SND_SOC_MT6359_ACCDET
++	help
++	  Minimal 48 kHz stereo DL1/VUL12/MTKAIF audio for Xiaomi begonia.
++	  Provides the 3.5 mm headphone output and the built-in analog mic.
+--- a/sound/soc/mediatek/Makefile
++++ b/sound/soc/mediatek/Makefile
+@@ -10,3 +10,5 @@
+ obj-$(CONFIG_SND_SOC_MT8192) += mt8192/
+ obj-$(CONFIG_SND_SOC_MT8195) += mt8195/
+ obj-$(CONFIG_SND_SOC_MT8365) += mt8365/
++
++obj-$(CONFIG_SND_SOC_MT6785_BEGONIA) += mt6785/
+--- a/arch/arm64/boot/dts/mediatek/mt6785-xiaomi-begonia.dts
++++ b/arch/arm64/boot/dts/mediatek/mt6785-xiaomi-begonia.dts
+@@ -731,3 +731,5 @@
+ 	vusb33-supply = <&mt6359_vusb_ldo_reg>;
+ 	status = "okay";
+ };
++
++#include "mt6785-begonia-audio.dtsi"

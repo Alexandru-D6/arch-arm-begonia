@@ -1,0 +1,180 @@
+--- a/sound/soc/codecs/mt6359-accdet.c
++++ b/sound/soc/codecs/mt6359-accdet.c
+@@ -356,7 +356,7 @@
+ 
+ static void is_key_pressed(struct mt6359_accdet *priv, bool pressed)
+ {
+-	priv->btn_type = priv->jack_type & ~MT6359_ACCDET_BTN_MASK;
++	priv->btn_type = 0;
+ 
+ 	if (pressed)
+ 		check_button(priv, priv->cali_voltage);
+@@ -905,19 +905,52 @@
+ {
+ 	struct mt6359_accdet *priv =
+ 		snd_soc_component_get_drvdata(component);
++	unsigned int value;
++	int ret;
+ 
+ 	snd_jack_set_key(jack->jack, SND_JACK_BTN_0, KEY_PLAYPAUSE);
+ 	snd_jack_set_key(jack->jack, SND_JACK_BTN_1, KEY_VOLUMEDOWN);
+ 	snd_jack_set_key(jack->jack, SND_JACK_BTN_2, KEY_VOLUMEUP);
+ 	snd_jack_set_key(jack->jack, SND_JACK_BTN_3, KEY_VOICECOMMAND);
+ 
++	mutex_lock(&priv->res_lock);
+ 	priv->jack = jack;
+-
++	ret = regmap_read(priv->regmap, ACCDET_EINT0_MEM_IN_ADDR, &value);
++	if (!ret) {
++		priv->jd_sts = (value >> ACCDET_EINT0_MEM_IN_SFT) &
++			       ACCDET_EINT0_MEM_IN_MASK;
++		mt6359_accdet_jd_setting(priv);
++		queue_work(priv->jd_workqueue, &priv->jd_work);
++	}
+ 	mt6359_accdet_jack_report(priv);
+-
+-	return 0;
++	mutex_unlock(&priv->res_lock);
++
++	return ret;
+ }
+ EXPORT_SYMBOL_GPL(mt6359_accdet_enable_jack_detect);
++
++static void mt6359_accdet_destroy_queues(void *data)
++{
++	struct mt6359_accdet *priv = data;
++
++	/* Registered before the IRQs, so devres frees handlers first. */
++	destroy_workqueue(priv->jd_workqueue);
++	destroy_workqueue(priv->accdet_workqueue);
++}
++
++static void mt6359_accdet_component_remove(struct snd_soc_component *component)
++{
++	struct mt6359_accdet *priv = snd_soc_component_get_drvdata(component);
++
++	mutex_lock(&priv->res_lock);
++	priv->jack = NULL;
++	mutex_unlock(&priv->res_lock);
++}
++
++static const struct snd_soc_component_driver mt6359_accdet_soc_driver = {
++	.name = "mt6359-accdet",
++	.remove = mt6359_accdet_component_remove,
++};
+ 
+ static int mt6359_accdet_probe(struct platform_device *pdev)
+ {
+@@ -960,7 +993,30 @@
+ 	}
+ 	mutex_init(&priv->res_lock);
+ 
++	priv->accdet_workqueue = create_singlethread_workqueue("accdet");
++	INIT_WORK(&priv->accdet_work, mt6359_accdet_work);
++	if (!priv->accdet_workqueue) {
++		dev_err(&pdev->dev, "Failed to create accdet workqueue\n");
++		return -ENOMEM;
++	}
++
++	priv->jd_workqueue = create_singlethread_workqueue("mt6359_accdet_jd");
++	INIT_WORK(&priv->jd_work, mt6359_accdet_jd_work);
++	if (!priv->jd_workqueue) {
++		dev_err(&pdev->dev, "Failed to create jack detect workqueue\n");
++		destroy_workqueue(priv->accdet_workqueue);
++		return -ENOMEM;
++	}
++
++	ret = devm_add_action_or_reset(&pdev->dev, mt6359_accdet_destroy_queues, priv);
++	if (ret)
++		return ret;
++	priv->jd_sts = M_PLUG_OUT;
++	priv->accdet_status = 0x3;
++
+ 	priv->accdet_irq = platform_get_irq(pdev, 0);
++	if (priv->accdet_irq < 0)
++		return dev_err_probe(&pdev->dev, priv->accdet_irq, "accdet_irq resource\n");
+ 	if (priv->accdet_irq >= 0) {
+ 		ret = devm_request_threaded_irq(&pdev->dev, priv->accdet_irq,
+ 						NULL, mt6359_accdet_irq,
+@@ -975,6 +1031,8 @@
+ 
+ 	if (priv->caps & ACCDET_PMIC_EINT0) {
+ 		priv->accdet_eint0 = platform_get_irq(pdev, 1);
++		if (priv->accdet_eint0 < 0)
++			return dev_err_probe(&pdev->dev, priv->accdet_eint0, "accdet_eint0 resource\n");
+ 		if (priv->accdet_eint0 >= 0) {
+ 			ret = devm_request_threaded_irq(&pdev->dev,
+ 							priv->accdet_eint0,
+@@ -990,6 +1048,8 @@
+ 		}
+ 	} else if (priv->caps & ACCDET_PMIC_EINT1) {
+ 		priv->accdet_eint1 = platform_get_irq(pdev, 2);
++		if (priv->accdet_eint1 < 0)
++			return dev_err_probe(&pdev->dev, priv->accdet_eint1, "accdet_eint1 resource\n");
+ 		if (priv->accdet_eint1 >= 0) {
+ 			ret = devm_request_threaded_irq(&pdev->dev,
+ 							priv->accdet_eint1,
+@@ -1005,23 +1065,10 @@
+ 		}
+ 	}
+ 
+-	priv->accdet_workqueue = create_singlethread_workqueue("accdet");
+-	INIT_WORK(&priv->accdet_work, mt6359_accdet_work);
+-	if (!priv->accdet_workqueue) {
+-		dev_err(&pdev->dev, "Failed to create accdet workqueue\n");
+-		ret = -1;
+-		goto err_accdet_wq;
+-	}
+-
+-	priv->jd_workqueue = create_singlethread_workqueue("mt6359_accdet_jd");
+-	INIT_WORK(&priv->jd_work, mt6359_accdet_jd_work);
+-	if (!priv->jd_workqueue) {
+-		dev_err(&pdev->dev, "Failed to create jack detect workqueue\n");
+-		ret = -1;
+-		goto err_eint_wq;
+-	}
+-
+ 	platform_set_drvdata(pdev, priv);
++	mutex_lock(&priv->res_lock);
++	mt6359_accdet_init(priv);
++	mutex_unlock(&priv->res_lock);
+ 	ret = devm_snd_soc_register_component(&pdev->dev,
+ 					      &mt6359_accdet_soc_driver,
+ 					      NULL, 0);
+@@ -1030,26 +1077,20 @@
+ 		return ret;
+ 	}
+ 
+-	priv->jd_sts = M_PLUG_OUT;
+-	priv->jack_type = 0;
+-	priv->btn_type = 0;
+-	priv->accdet_status = 0x3;
+-	mt6359_accdet_init(priv);
+-
+-	mt6359_accdet_jack_report(priv);
+-
+ 	return 0;
+-
+-err_eint_wq:
+-	destroy_workqueue(priv->accdet_workqueue);
+-err_accdet_wq:
+-	dev_err(&pdev->dev, "%s error. now exit.!\n", __func__);
+-	return ret;
+-}
++}
++
++static const struct of_device_id mt6359_accdet_match[] = {
++	{ .compatible = "mediatek,mt6359-accdet" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, mt6359_accdet_match);
++MODULE_ALIAS("platform:mt6359-accdet");
+ 
+ static struct platform_driver mt6359_accdet_driver = {
+ 	.driver = {
+-		.name = "pmic-codec-accdet",
++		.name = "mt6359-accdet",
++		.of_match_table = mt6359_accdet_match,
+ 	},
+ 	.probe = mt6359_accdet_probe,
+ };

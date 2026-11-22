@@ -5,6 +5,7 @@
 set -euo pipefail
 
 ROOTFS="${1:-mnt}"
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 SRC_MODULES="${2:-modules}"
 SRC_FIRMWARE="${3:-firmware}"
 
@@ -56,5 +57,7 @@ if [ -f firstboot.sh ]; then
     sudo mkdir -p "$ROOTFS/etc/systemd/system"
     sudo cp firstboot.sh "$ROOTFS/root/"
 fi
+
+sudo bash "$SCRIPT_DIR/install-audio.sh" "$ROOTFS" alarm
 
 echo "=== Rootfs preparation complete ==="

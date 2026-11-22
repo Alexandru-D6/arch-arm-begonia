@@ -31,6 +31,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check audio test helper
+        run: |
+          python3 -m unittest discover -s tests -v
+          bash -n boot/apply-kernel-audio.sh rootfs/install-audio.sh scripts/test-mic-aux.sh
+
       - name: Install deps
         run: |
           sudo apt-get update -qq
@@ -134,6 +139,9 @@ jobs:
           for driver in r8152 ax88179_178a smsc95xx; do
             modinfo -b mnt -k "$KVER" "$driver" > /dev/null
           done
+          for driver in snd-soc-mt6785-begonia snd-soc-mt6359 mt6359-accdet; do
+            modinfo -b mnt -k "$KVER" "$driver" > /dev/null
+          done
           echo "KVER=$KVER" >> "$GITHUB_ENV"
 
       - name: Pack custom boot.img with new kernel
@@ -192,7 +200,9 @@ jobs:
               busybox \
               sudo vim nano git openssh rsync curl wget \
               networkmanager iwd wpa_supplicant \
-              htop tmux 2>&1
+              htop tmux \
+              alsa-utils alsa-ucm-conf \
+              pipewire pipewire-audio pipewire-alsa pipewire-pulse wireplumber python 2>&1
           '
 
       # ============================================================
@@ -225,6 +235,13 @@ jobs:
             echo "PermitRootLogin yes" >> /etc/ssh/sshd_config
           '
 
+      - name: Install begonia AUX and internal microphone profile
+        run: |
+          sudo bash rootfs/install-audio.sh "$GITHUB_WORKSPACE/mnt" alarm
+          test -f mnt/usr/share/alsa/ucm2/conf.d/begonia-aux/begonia-aux.conf
+          test -f mnt/etc/wireplumber/wireplumber.conf.d/51-begonia-aux.conf
+          test -x mnt/usr/local/bin/begonia-mic-aux-test
+
       - name: Cleanup & release
         run: |
           sudo umount --recursive "$GITHUB_WORKSPACE/mnt"
@@ -252,7 +269,7 @@ jobs:
             | Mejora | Detalle |
             |---|---|
             | 🐉 **Waydroid** | CGroups v1 habilitado → Android 13 (LineageOS) bootea dentro del contenedor |
-            | 🔊 **Audio** | Códec MT6359 activado → audio por altavoz/jack del Helio G90T |
+            | 🔊 **Audio** | Ruta experimental MT6785/MT6359 para AUX + micrófono interno, UCM2 y PipeWire; pendiente de validación física |
             | 🔌 **USB** | RTL8152 (Ethernet USB) + módems por puerto serie |
             | 📦 **DM_VERITY** | Integridad de bloques para imágenes Android |
             | ⚡ **ZSWAP** | Compresión de swap en RAM (mejora rendimiento) |
@@ -264,6 +281,8 @@ jobs:
             CONFIG_CPUSETS_V1=y
             CONFIG_NF_CT_NETLINK=m
             CONFIG_SND_SOC_MT6359=m
+            CONFIG_SND_SOC_MT6785_BEGONIA=m
+            CONFIG_SND_SOC_MT6359_ACCDET=m
             CONFIG_MTK_ADSP_MBOX=m
             CONFIG_MTK_SCP=m
             CONFIG_USB_RTL8152=m

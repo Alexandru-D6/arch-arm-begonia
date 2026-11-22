@@ -9,7 +9,7 @@ Arch Linux ARM begonia
 ├── boot.img
 │   ├── Kernel mainline 6.x (linux-postmarketos-mediatek-mt6785)
 │   ├── DTB/DTBO correcto para begonia (MT6785 Helio G90T)
-│   └── initramfs mínimo Arch (busca rootfs por label ArchRoot)
+│   └── initramfs de pmOS (busca rootfs por label pmOS_root)
 │
 └── rootfs.img
     ├── Arch Linux ARM aarch64
@@ -46,18 +46,18 @@ El mismo enfoque se aplica aquí:
 ```
 pmOS kernel + dtb → boot.img
 Arch Linux ARM rootfs → systemd + glibc + pacman
-Initramfs adaptado → puente entre ambos
+Initramfs pmOS → montaje de pmOS_root
 ```
 
 ## 🏗️ Pipeline de construcción
 
 ### Workflow 1: Build pmOS base (`01_build_pmos_base.yml`)
 
-Construye una imagen postmarketOS de referencia para extraer:
+Descarga un artefacto de begonia del productor indicado en `source_repo`. Con `source_run` vacío busca una compilación exitosa con el artefacto solicitado. Ejecútalo en este repositorio antes del workflow 02. Extrae:
 - `boot.img` — kernel mainline 6.x + DTB + initramfs pmOS
-- `modules.tar.zst` — módulos del kernel compilados
-- `firmware.tar.zst` — firmware mediatek/MT6785
-- `deviceinfo` y cmdline
+- `modules.tar.gz` — módulos del kernel compilados
+- `firmware.tar.gz` — firmware mediatek/MT6785
+- Parámetros de arranque en la cabecera de `boot.img`
 
 Habilita drivers USB Ethernet (AX88179, RTL8152, SMSC95XX) y WiFi Realtek/MediaTek para soporte de dongles.
 
@@ -66,20 +66,19 @@ Habilita drivers USB Ethernet (AX88179, RTL8152, SMSC95XX) y WiFi Realtek/MediaT
 Construye la imagen final:
 1. Descarga `ArchLinuxARM-aarch64-latest.tar.gz`
 2. Crea rootfs ext4 de 8 GB
-3. Inyecta módulos y firmware desde pmOS
-4. Configura systemd (multi-user, sshd, NetworkManager, tailscaled)
-5. Construye initramfs Arch mínimo
-6. Repackea boot.img con kernel pmOS + initramfs Arch
-7. Publica `boot-begonia-arch.img` + `rootfs-archlinuxarm-begonia.img.xz`
+3. Compila el kernel y el DTB de begonia e instala sus módulos y el firmware de pmOS
+4. Configura systemd (multi-user, sshd, NetworkManager)
+5. Reconstruye boot.img con el kernel y DTB compilados, la cabecera v2 y el initramfs de pmOS con los módulos de arranque de esa misma compilación, incluidos el regulador MT6360 y el controlador USB-C necesarios para la red USB
+6. Publica `boot-begonia-arch.img` + `rootfs-archlinuxarm-begonia-console.img.xz`
 
 ## 📥 Descarga
 
-Las imágenes nightly están en [Releases](https://github.com/criollojoel10/alarm-begonia/releases/tag/nightly):
+El workflow 02 publica las imágenes bajo la etiqueta `nightly` en la sección Releases de este repositorio.
 
 | Archivo | Descripción |
 |---|---|
-| `boot-begonia-arch.img` | Boot image (kernel + initramfs Arch) |
-| `rootfs-archlinuxarm-begonia.img.xz` | Rootfs Arch Linux ARM (8 GB, comprimido) |
+| `boot-begonia-arch.img` | Boot image (kernel + DTB de begonia + initramfs pmOS) |
+| `rootfs-archlinuxarm-begonia-console.img.xz` | Rootfs Arch Linux ARM (8 GB, comprimido) |
 | `SHA256SUMS.txt` | Checksums |
 
 ## 🔧 Instalación
@@ -93,16 +92,14 @@ Las imágenes nightly están en [Releases](https://github.com/criollojoel10/alar
 ### Pasos
 
 ```bash
-# 1. Extraer los archivos
-tar -xzf alarm-begonia-nightly.tar.gz
-cd alarm-begonia-nightly
+# 1. Descargar ambos archivos de la misma release nightly
 
 # 2. Decomprimir rootfs (si es .xz)
-xz -d rootfs-archlinuxarm-begonia.img.xz
+xz -d rootfs-archlinuxarm-begonia-console.img.xz
 
 # 3. Bootear a fastboot
 adb reboot bootloader
-# o: apagar → Volumen ARRIBA + ENCENDIDO
+# o: apagar → Volumen ABAJO + ENCENDIDO
 
 # 4. Verificar conexión
 fastboot devices
@@ -110,11 +107,8 @@ fastboot devices
 # 5. Flashear boot (kernel + initramfs)
 fastboot flash boot boot-begonia-arch.img
 
-# 6. Flashear rootfs (userdata)
-fastboot flash userdata rootfs-archlinuxarm-begonia.img
-
-# Opcional: borrar datos previos
-fastboot erase userdata  # ⚠️ borra TODO
+# 6. Flashear rootfs (reemplaza todos los datos de userdata)
+fastboot flash userdata rootfs-archlinuxarm-begonia-console.img
 
 # 7. Reiniciar
 fastboot reboot
@@ -122,24 +116,22 @@ fastboot reboot
 
 ### Primer arranque
 
-El teléfono bootea directamente a **Arch Linux ARM console** (sin GUI). El initramfs busca:
-1. Label `ArchRoot` (recomendado)
-2. Label `pmOS_root` (compatibilidad)
-3. Partición `userdata`
+El initramfs de pmOS busca el sistema ext4 con la etiqueta `pmOS_root` en `userdata` y arranca systemd de Arch en modo consola. La compilación elimina los UUID del sistema de referencia.
 
 Para conectarse:
 ```bash
 # USB Networking (PC)
-sudo ip link set enp0s20f0u1 up
-sudo dhclient enp0s20f0u1
-ssh root@192.168.2.15  # IP asignada por DHCP
+USB_IF=enp0s20f0u1  # sustituir por la interfaz USB que aparece en el PC
+sudo ip addr replace 172.16.42.2/24 dev "$USB_IF"
+sudo ip link set "$USB_IF" up
+ssh alarm@172.16.42.1  # dirección del teléfono, heredada del initramfs pmOS
 
 # USB Ethernet dongle (conecta a router)
-ssh root@<IP>
+ssh alarm@<IP>
 
 # Credenciales
-# Usuario: root
-# Contraseña: root
+# Usuario: alarm
+# Contraseña: alarm
 ```
 
 Post-install:
@@ -147,9 +139,6 @@ Post-install:
 # Inicializar keyring de pacman
 pacman-key --init
 pacman-key --populate archlinuxarm
-
-# Regenerar initramfs local
-mkinitcpio -P
 
 # Configurar red
 systemctl enable --now NetworkManager
@@ -199,7 +188,7 @@ alarm-begonia/
 │   └── firstboot.sh                # Primer arranque
 ├── boot/
 │   ├── repack-bootimg.sh           # Reconstruir boot.img
-│   └── cmdline.txt                 # Kernel cmdline
+│   └── cmdline.txt                 # Ejemplo para el initramfs alternativo
 ├── flash/
 │   └── flash-begonia-arch.sh       # Script de flasheo
 └── README.md

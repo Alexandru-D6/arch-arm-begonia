@@ -3,12 +3,16 @@ name: "01 — Fetch pmOS base"
 on:
   workflow_dispatch:
     inputs:
+      source_repo:
+        description: "Repository producing the pmOS begonia artifact"
+        default: "criollojoel10/begonia-postmarketos-build"
       source_run:
-        description: "Build # from begonia-postmarketos-build"
-        default: "25"
+        description: "Upstream build number or run ID (blank for latest successful build with the artifact)"
+        required: false
 
-env:
-  PAT: ${{ secrets.PMOS_PAT }}
+permissions:
+  actions: read
+  contents: read
 
 jobs:
   fetch:
@@ -25,22 +29,33 @@ jobs:
             android-sdk-libsparse-utils \
             --no-install-recommends
 
-      - name: Download artifact
+      - name: Resolve requested source run
+        if: inputs.source_run != ''
+        id: source
+        env:
+          GH_TOKEN: ${{ secrets.PMOS_PAT || github.token }}
+          SOURCE_REPO: ${{ inputs.source_repo }}
+          SOURCE_RUN: ${{ inputs.source_run }}
         run: |
-          echo "${{ env.PAT }}" | gh auth login --with-token 2>/dev/null || true
-          RUN_ID=$(gh run list --repo criollojoel10/begonia-postmarketos-build --limit 100 --json databaseId,number -q ".[] | select(.number == ${{ inputs.source_run }}) | .databaseId" | head -1)
-          [ -z "$RUN_ID" ] && RUN_ID="${{ inputs.source_run }}"
-          echo "Run ID: $RUN_ID"
-          gh run download "$RUN_ID" \
-            --repo criollojoel10/begonia-postmarketos-build \
-            --name pmos-begonia-console-cross-true \
-            --dir pmos-raw 2>&1
-          cd pmos-raw && zip -r ../pmos.zip . && cd ..
+          [[ "$SOURCE_RUN" =~ ^[0-9]+$ ]] || exit 1
+          id=$(gh run list --repo "$SOURCE_REPO" --workflow final.yaml --limit 100 \
+            --json number,databaseId --jq ".[] | select(.number == $SOURCE_RUN) | .databaseId")
+          echo "id=${id:-$SOURCE_RUN}" >> "$GITHUB_OUTPUT"
+
+      - name: Download pmOS build
+        uses: dawidd6/action-download-artifact@v9
+        with:
+          github_token: ${{ secrets.PMOS_PAT || github.token }}
+          repo: ${{ inputs.source_repo }}
+          workflow: final.yaml
+          run_id: ${{ steps.source.outputs.id }}
+          search_artifacts: true
+          name: pmos-begonia-console-cross-true
+          path: pmos
 
       - name: Extract boot files
         run: |
-          mkdir -p pmos out
-          unzip -o pmos.zip -d pmos/
+          mkdir -p out
           EXDIR=$(find pmos -type d -name "export" | head -1)
           [ -z "$EXDIR" ] && EXDIR="pmos"
 
@@ -76,13 +91,14 @@ jobs:
             echo "modules.tar.gz: $MOD_SIZE ($MOD_COUNT files)"
           else
             echo "❌ modules.tar.gz MISSING"
+            exit 1
           fi
           if [ -f out/firmware.tar.gz ]; then
             echo "firmware.tar.gz: $(ls -lh out/firmware.tar.gz | awk '{print $5}')"
           else
             echo "❌ firmware.tar.gz MISSING"
           fi
-          [ -f out/initramfs ] && echo "initramfs: $(ls -lh out/initramfs | awk '{print $5}')"
+          if [ -f out/initramfs ]; then ls -lh out/initramfs; fi
 
       - name: Upload
         uses: actions/upload-artifact@v4

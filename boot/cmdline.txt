@@ -1,5 +1,5 @@
 # Kernel cmdline para Arch Linux ARM en begonia
-# Se inyecta en boot.img durante repack
+# Ejemplo para initramfs/init. El workflow 02 hereda el cmdline de pmOS.
 console=tty0
 console=ttyS0,115200
 root=/dev/disk/by-label/ArchRoot

@@ -1,117 +1,82 @@
 #!/usr/bin/env python3
-"""
-Android boot.img repacker — pure Python, no external deps.
+"""Repack a begonia v2 boot image using AOSP's exported mkbootimg arguments."""
+import argparse
+import filecmp
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import tempfile
 
-Used as fallback when mkbootimg is not available.
-Supports v2/v3 boot image headers.
 
-Usage:
-  repack-bootimg.py <input-boot.img> <initramfs> <cmdline> <output.img>
-"""
-import struct, sys, os
+def unpack(image, directory):
+    result = subprocess.check_output([
+        "unpack_bootimg", "--boot_img", image, "--out", directory,
+        "--format=mkbootimg", "-0",
+    ])
+    args = os.fsdecode(result).removesuffix("\0").split("\0")
+    return dict(zip(args[::2], args[1::2], strict=True))
 
-PAGE_SIZE = 4096
-
-def round_to_page(size):
-    return ((size + PAGE_SIZE - 1) // PAGE_SIZE) * PAGE_SIZE
 
 def main():
-    if len(sys.argv) < 5:
-        print(f"Usage: {sys.argv[0]} <input.img> <initramfs> <cmdline> <output.img>")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("base", type=Path)
+    parser.add_argument("ramdisk", help="replacement ramdisk, or - to keep the original")
+    parser.add_argument("cmdline", help="replacement command line, or - to inherit pmOS flags")
+    parser.add_argument("output", type=Path)
+    parser.add_argument("--kernel")
+    parser.add_argument("--dtb")
+    parser.add_argument("--modules-dir", type=Path, help="installed module tree for the new kernel release")
+    parser.add_argument("--extra-cmdline", default="")
+    args = parser.parse_args()
 
-    in_path = sys.argv[1]
-    initrd_path = sys.argv[2]
-    cmdline = sys.argv[3].strip()
-    out_path = sys.argv[4]
+    with tempfile.TemporaryDirectory(dir=args.output.parent) as tmp:
+        work = Path(tmp)
+        fields = unpack(args.base, work / "base")
+        if fields.get("--header_version") != "2" or "--dtb" not in fields:
+            parser.exit(1, "The begonia pmOS base must have a v2 header and a DTB.\n")
+        cmdline = args.cmdline
+        if cmdline == "-":
+            # Let the pmOS initramfs discover pmOS_root by label.
+            selectors = {"pmos_root_uuid", "pmos_boot_uuid", "pmos_root", "pmos_boot"}
+            tokens = re.findall(r'(?:[^"\s]|"[^"]*")+', fields["--cmdline"])
+            cmdline = " ".join(token for token in tokens
+                               if token.partition("=")[0].replace(".", "_") not in selectors)
+        fields["--cmdline"] = " ".join(filter(None, (cmdline, args.extra_cmdline)))
+        if args.kernel:
+            fields["--kernel"] = args.kernel
+        if args.dtb:
+            fields["--dtb"] = args.dtb
+        if args.ramdisk != "-":
+            fields["--ramdisk"] = args.ramdisk
 
-    with open(in_path, 'rb') as f:
-        data = f.read()
+        if args.modules_dir:
+            refreshed = work / "initramfs.gz"
+            subprocess.run([sys.executable, Path(__file__).with_name("refresh-initramfs.py"),
+                            fields["--ramdisk"], args.modules_dir, refreshed], check=True)
+            fields["--ramdisk"] = str(refreshed)
 
-    magic = data[0:8]
-    if magic not in (b'ANDROID!',):
-        print(f"❌ Not Android boot image: {magic!r}")
-        sys.exit(1)
+        components = {"--kernel", "--ramdisk", "--dtb", "--second", "--recovery_dtbo"}
+        for key in components.intersection(fields):
+            if not Path(fields[key]).stat().st_size:
+                parser.exit(1, f"Empty boot component: {key}\n")
+        image = work / "boot.img"
+        command = ["mkbootimg", "--output", image]
+        for key, value in fields.items():
+            command.extend((key, value))
+        subprocess.run(command, check=True)
 
-    header_version = struct.unpack('<I', data[40:44])[0] if len(data) > 44 else 0
-    page_size = struct.unpack('<I', data[32:36])[0] if len(data) > 36 else PAGE_SIZE
-    if page_size < 2048:
-        page_size = PAGE_SIZE
-
-    # Read existing kernel, ramdisk
-    k_offset = page_size
-    k_size = struct.unpack('<I', data[8:12])[0]
-    kernel = data[k_offset:k_offset + k_size]
-
-    # We replace the ramdisk
-    with open(initrd_path, 'rb') as f:
-        initrd = f.read()
-
-    # Calculate new offsets
-    k_pages = round_to_page(k_size)
-    r_pages = round_to_page(len(initrd))
-
-    # Build header
-    buf = bytearray(64 + 512)  # header + cmdline
-    
-    # Magic
-    buf[0:8] = b'ANDROID!'
-    # Kernel size
-    struct.pack_into('<I', buf, 8, k_size)
-    # Ramdisk size (new)
-    struct.pack_into('<I', buf, 16, len(initrd))
-    # Page size
-    struct.pack_into('<I', buf, 32, page_size)
-    # Header version
-    struct.pack_into('<I', buf, 40, header_version)
-    # OS version (23.0.0)
-    os_version = (23 << 14) | (0 << 7) | 0
-    struct.pack_into('<I', buf, 36, os_version)
-
-    # Copy other header fields from original
-    for field_offset in [12, 20, 24, 28]:  # second, dtb, tags sizes
-        val = struct.unpack('<I', data[field_offset:field_offset+4])[0]
-        struct.pack_into('<I', buf, field_offset, val)
-    
-    # Copy offsets from original (base, kernel_offset, etc.)
-    for field_offset in range(44, min(64, len(data))):
-        buf[field_offset] = data[field_offset]
-    # If >= v3, use different layout
-    if header_version >= 3:
-        buf[48:52] = struct.pack('<I', k_pages + r_pages)  # dtb/additional size
-    
-    # Cmdline (bytes 64-576 or shorter for v3+)
-    cmd_bytes = cmdline.encode('ascii', errors='replace')[:511]
-    # Clear cmdline area
-    for i in range(64, 576):
-        buf[i] = 0
-    buf[64:64+len(cmd_bytes)] = cmd_bytes
-
-    out = bytearray(buf)
-
-    # Add page padding after header
-    header_pages = round_to_page(len(out))
-    out.extend(b'\x00' * (header_pages - len(out)))
-
-    # Write kernel at page boundary
-    out.extend(kernel)
-    k_pad = round_to_page(k_size) - k_size
-    out.extend(b'\x00' * k_pad)
-
-    # Write ramdisk
-    out.extend(initrd)
-    r_pad = round_to_page(len(initrd)) - len(initrd)
-    out.extend(b'\x00' * r_pad)
-
-    with open(out_path, 'wb') as f:
-        f.write(out)
-
-    print(f"✅ Boot image: {out_path}")
-    print(f"   Kernel: {k_size:,} B → {k_pages:,} B")
-    print(f"   Ramdisk: {len(initrd):,} B → {r_pages:,} B")
-    print(f"   Cmdline: {cmdline[:80]}...")
-    print(f"   Total: {len(out):,} B")
+        # Compare payloads and header arguments before publishing the output.
+        rebuilt = unpack(image, work / "verify")
+        for key in components.intersection(fields):
+            if key not in rebuilt or not filecmp.cmp(fields[key], rebuilt[key], shallow=False):
+                parser.exit(1, f"Boot image payload mismatch: {key}\n")
+            rebuilt[key] = fields[key]
+        if rebuilt != fields:
+            parser.exit(1, "Boot image header mismatch after repacking.\n")
+        image.replace(args.output)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

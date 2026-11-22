@@ -8,15 +8,20 @@ on:
         default: "8"
 
 permissions:
+  actions: read
   contents: write
 
 env:
   ARCH_ROOTFS_URL: "http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz"
   RTL8192EU_REPO: "https://github.com/clnhub/rtl8192eu-linux.git"
+  LOCALVERSION: ""
   KERNEL_REPO: "https://gitlab.postmarketos.org/mt6785-mainline/linux.git"
   KERNEL_TAG: "6.16.4-r0"
-  KERNEL_CONFIG_URL: "https://gitlab.postmarketos.org/postmarketOS/pmaports/-/raw/master/device/testing/linux-postmarketos-mediatek-mt6785/config-postmarketos-mediatek-mt6785.aarch64"
-  CACHE_KEY_KERNEL: "v1-kernel-6.16.4-r0"
+  KERNEL_CONFIG_URL: "https://gitlab.postmarketos.org/postmarketOS/pmaports/-/raw/ecd710af96ac54650e945a268639f4a7cbc47960/device/testing/linux-postmarketos-mediatek-mt6785/config-postmarketos-mediatek-mt6785.aarch64"
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   build:
@@ -32,17 +37,9 @@ jobs:
           sudo apt-get install -y -qq \
             libarchive-tools xz-utils zstd e2fsprogs \
             qemu-user-static binfmt-support build-essential \
-            gcc-aarch64-linux-gnu python3 python3-pip \
+            gcc-aarch64-linux-gnu kmod python3 python3-pip \
             --no-install-recommends
-          # osm0sis/mkbootimg: C binary, sin bug de gki module de Google
-          git clone --depth=1 https://github.com/osm0sis/mkbootimg.git /tmp/mkbootimg-repo
-          # Ubuntu 24.04 gcc trata -Werror como error fatal en rsa.c
-          sed -i 's/-Werror//' /tmp/mkbootimg-repo/Makefile /tmp/mkbootimg-repo/libmincrypt/Makefile
-          make -C /tmp/mkbootimg-repo
-          sudo cp /tmp/mkbootimg-repo/mkbootimg /usr/local/bin/
-          # osm0sis compila como unpackbootimg, workflow usa unpack_bootimg
-          sudo cp /tmp/mkbootimg-repo/unpackbootimg /usr/local/bin/unpack_bootimg
-          which mkbootimg unpack_bootimg || exit 1
+          bash boot/install-boot-tools.sh
 
       # ============================================================
       # Use pmOS base from workflow 01
@@ -57,22 +54,13 @@ jobs:
           workflow: 01_build_pmos_base.yml
           workflow_conclusion: success
           workflow_search: true
-          check_artifacts: true
-          repo: criollojoel10/alarm-begonia
+          search_artifacts: true
+          repo: ${{ github.repository }}
 
       - name: Download Arch rootfs
         run: |
           wget -q --show-progress "${{ env.ARCH_ROOTFS_URL }}" -O arch-rootfs.tar.gz
           ls -lh arch-rootfs.tar.gz
-
-      # ============================================================
-      # FIX CRÍTICO #1: Remover UUIDs stale del cmdline
-      # El boot.img de pmOS tiene UUIDs hardcodeados del build #25.
-      # find_partition() chequea UUID primero: si existe pero no coincide
-      # RETORNA VACÍO (no cae a label). Con UUIDs removidos, cae a label.
-      # ============================================================
-      - name: Fix boot.img cmdline (remove stale UUIDs)
-        run: python3 scripts/fix-cmdline.py
 
       - name: Create and mount rootfs image
         run: |
@@ -81,16 +69,13 @@ jobs:
           mkdir -p mnt
           sudo mount rootfs.img mnt
 
-      - name: Extract Arch rootfs + inject modules/firmware
+      - name: Extract Arch rootfs and pmOS firmware
         run: |
           sudo bsdtar -xpf arch-rootfs.tar.gz -C mnt
           sudo mkdir -p mnt/usr/lib
-          sudo tar -xzf pmos-base/modules.tar.gz -C mnt/usr/lib/
-          sudo tar -xzf pmos-base/firmware.tar.gz -C mnt/usr/lib/ 2>/dev/null || true
-          KVER=$(ls mnt/usr/lib/modules/ | head -1)
-          echo "Kernel: $KVER"
-          echo "Modules: $(find mnt/usr/lib/modules -type f | wc -l)"
-          echo "KVER=$KVER" >> $GITHUB_ENV
+          if [ -f pmos-base/firmware.tar.gz ]; then
+            sudo tar -xzf pmos-base/firmware.tar.gz -C mnt/usr/lib/
+          fi
 
       # ============================================================
       # Build RTL8192EU (TP-Link WN821N) WiFi driver
@@ -100,15 +85,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: linux-kernel
-          key: ${{ env.CACHE_KEY_KERNEL }}
-          restore-keys: |
-            v1-kernel-
+          key: v2-kernel-${{ env.KERNEL_TAG }}
 
       - name: Clone kernel source (shallow, tag ${{ env.KERNEL_TAG }})
         if: steps.cache-kernel.outputs.cache-hit != 'true'
         run: |
-          git clone --depth 1 --branch ${{ env.KERNEL_TAG }} \
-            ${{ env.KERNEL_REPO }} linux-kernel 2>&1 | tail -5
+          git clone --depth 1 --branch "$KERNEL_TAG" \
+            "$KERNEL_REPO" linux-kernel 2>&1 | tail -5
           test -d linux-kernel/.git || { echo 'ERROR: kernel clone failed'; exit 1; }
 
       - name: Prepare kernel build tree
@@ -125,42 +108,7 @@ jobs:
       - name: Enable Waydroid and hardware features in kernel
         run: |
           cd linux-kernel
-
-          # [CGROUP V1] — Android/Waydroid necesita legacy cgroup interface
-          ./scripts/config --enable MEMCG_V1
-          ./scripts/config --enable CPUSETS_V1
-
-          # [NETFILTER] — Container networking helpers
-          ./scripts/config --module NF_CT_NETLINK
-          ./scripts/config --module NF_NAT_FTP
-          ./scripts/config --module NF_NAT_TFTP
-
-          # [AUDIO] — MT6359 codec (Helio G90T / MT6785 PMIC audio)
-          ./scripts/config --module SND_SOC_MT6359
-          ./scripts/config --module MTK_ADSP_MBOX
-          ./scripts/config --module MTK_SCP
-
-          # [USB] — Extra dongles
-          ./scripts/config --module USB_NET_RTL8152
-          ./scripts/config --module USB_SERIAL_OPTION
-
-          # [STORAGE/PERF]
-          ./scripts/config --module DM_VERITY
-          ./scripts/config --enable ZSWAP
-
-          # Fix kernel release string to match pmOS (6.16.4, no + suffix)
-          ./scripts/config --disable LOCALVERSION_AUTO
-          ./scripts/config --set-str LOCALVERSION ""
-
-          # Resolve dependencies (auto-disables unmet deps)
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig 2>&1 | tail -5
-          echo "=== Verified flags ==="
-          grep -E "MEMCG_V1|CPUSETS_V1|NF_CT_NETLINK|SND_SOC_MT6359|MTK_ADSP|MTK_SCP|DM_VERITY|ZSWAP=|LOCALVERSION" .config | sort
-
-          # Force clean version: prevent git dirty detection (script/config modifica .config → tree dirty → + suffix)
-          # Prevent + suffix from git dirty tree
-          # Prevent + suffix from git dirty tree (scripts/config modifica .config)
-          printf "" > .scmversion
+          bash "$GITHUB_WORKSPACE/boot/configure-kernel.sh"
 
       - name: Build full kernel (Image.gz + modules + DTBs)
         run: |
@@ -176,67 +124,24 @@ jobs:
 
       - name: Install custom kernel modules to rootfs
         run: |
-          cd linux-kernel
-          # Ignorar error del symlink build → source (no necesario para boot)
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- INSTALL_MOD_PATH=../mnt modules_install 2>&1 | tail -10 || true
-          KVER=$(ls mnt/usr/lib/modules/ | head -1)
-          echo "Modules installed for: $KVER ($(find mnt/usr/lib/modules/$KVER -name '*.ko' | wc -l) modules)"
+          KVER=$(make -s -C linux-kernel ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- kernelrelease)
+          # The pmOS ramdisk carries early-boot modules from this release.
+          tar -tzf pmos-base/modules.tar.gz > "$RUNNER_TEMP/pmos-modules.list"
+          grep -Fx "modules/$KVER/" "$RUNNER_TEMP/pmos-modules.list"
+          sudo make -C linux-kernel ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+            LOCALVERSION= INSTALL_MOD_PATH="$GITHUB_WORKSPACE/mnt" INSTALL_MOD_STRIP=1 modules_install
+          sudo depmod -b mnt "$KVER"
+          for driver in r8152 ax88179_178a smsc95xx; do
+            modinfo -b mnt -k "$KVER" "$driver" > /dev/null
+          done
+          echo "KVER=$KVER" >> "$GITHUB_ENV"
 
       - name: Pack custom boot.img with new kernel
         run: |
-          # Extract old boot.img (cmdline ya fixeado por fix-cmdline.py)
-          # NOTA: osm0sis unpack_bootimg extrae con prefijo "boot.img-"
-          mkdir -p boot-extracted
-          unpack_bootimg --input pmos-base/boot.img --output boot-extracted
-          echo "=== Extracted boot.img (osm0sis prefix: boot.img-*) ==="
-          ls -lh boot-extracted/
-
-          # Crear symlinks sin prefijo para compatibilidad
-          cd boot-extracted
-          for f in boot.img-*; do
-            name="${f#boot.img-}"
-            ln -sf "$f" "$name" 2>/dev/null || true
-          done
-          cd ..
-
-          # Reemplazar kernel con nuestro Image.gz compilado
-          cp linux-kernel/arch/arm64/boot/Image.gz boot-extracted/kernel
-
-          # Intentar usar DTB recién compilado (excluir .cmd temp files)
-          NEW_DTB=$(find linux-kernel/arch/arm64/boot/dts -name '*begonia*.dtb' -o -name '*mt6785*.dtb' 2>/dev/null | head -1)
-          if [ -n "$NEW_DTB" ] && [ -f "$NEW_DTB" ]; then
-            echo "Using newly built DTB: $NEW_DTB"
-            cp "$NEW_DTB" boot-extracted/dtb
-            ln -sf dtb boot-extracted/boot.img-dtb 2>/dev/null || true
-          else
-            echo "Using extracted DTB from pmOS boot.img"
-          fi
-
-          CMDLINE="$(cat boot-extracted/cmdline 2>/dev/null || cat boot-extracted/boot.img-cmdline 2>/dev/null || echo '')"
-          BASE="$(cat boot-extracted/base 2>/dev/null || cat boot-extracted/boot.img-base 2>/dev/null || echo '0x40000000')"
-          PAGESIZE="$(cat boot-extracted/pagesize 2>/dev/null || cat boot-extracted/boot.img-pagesize 2>/dev/null || echo '2048')"
-
-          mkbootimg \
-            --kernel boot-extracted/kernel \
-            --ramdisk boot-extracted/ramdisk \
-            --dtb boot-extracted/dtb \
-            --cmdline "$CMDLINE" \
-            --base "$BASE" \
-            --pagesize "$PAGESIZE" \
-            --os_version "15.0.0" \
-            --os_patch_level "2126-05-01" \
-            --output pmos-base/boot.img
-
-          echo "=== New boot.img ==="
-          ls -lh pmos-base/boot.img
-          python3 -c "
-          import struct
-          with open('pmos-base/boot.img', 'rb') as f:
-            data = f.read(1648)
-          c = data[64:576].rstrip(b'\\x00').decode('ascii', 'replace')
-          print('Cmdline:')
-          print(c)
-          "
+          python3 scripts/repack-bootimg.py pmos-base/boot.img - - boot-begonia-arch.img \
+            --modules-dir "mnt/usr/lib/modules/$KVER" \
+            --kernel linux-kernel/arch/arm64/boot/Image.gz \
+            --dtb linux-kernel/arch/arm64/boot/dts/mediatek/mt6785-xiaomi-begonia.dtb
 
       - name: Build RTL8192EU driver
         run: |
@@ -246,12 +151,11 @@ jobs:
           sed -i 's/CONFIG_PLATFORM_I386_PC = y/CONFIG_PLATFORM_I386_PC = n/' Makefile
           sed -i 's/CONFIG_PLATFORM_ARM_AARCH64 = n/CONFIG_PLATFORM_ARM_AARCH64 = y/' Makefile
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
-            KSRC="$KSRC" KBUILD_MODPOST_WARN=1 2>&1 | tail -30
+            KSRC="$KSRC" 2>&1 | tail -30
           ls -lh 8192eu.ko 2>/dev/null || { ls *.ko; false; }
 
       - name: Install WiFi driver to rootfs
         run: |
-          KVER=$(ls mnt/usr/lib/modules/ | head -1)
           MODDIR="mnt/usr/lib/modules/$KVER/extra"
           sudo mkdir -p "$MODDIR"
           sudo cp rtl8192eu-linux/8192eu.ko "$MODDIR/"
@@ -276,7 +180,7 @@ jobs:
           sudo mount --bind /dev/pts mnt/dev/pts 2>/dev/null || true
           sudo rm -f mnt/etc/resolv.conf
           sudo bash -c 'cp /etc/resolv.conf mnt/etc/resolv.conf'
-          sudo cp pmos-base/vmlinuz mnt/boot/vmlinuz-linux 2>/dev/null || true
+          sudo install -m644 linux-kernel/arch/arm64/boot/Image.gz mnt/boot/vmlinuz-linux
           sudo sed -i '/\[options\]/a DisableSandbox' mnt/etc/pacman.conf 2>/dev/null || true
 
       - name: Install packages (pacman in chroot)
@@ -307,29 +211,6 @@ jobs:
             | sudo tee mnt/etc/fstab > /dev/null
           cat mnt/etc/fstab
 
-      # ============================================================
-      # NO mkinitcpio — NO repack boot.img
-      # El initramfs de pmOS sabe buscar pmOS_root por label.
-      # El boot.img se usa tal cual (con cmdline sin UUIDs stale).
-      # ============================================================
-
-      - name: Prepare boot.img for release
-        run: |
-          cp pmos-base/boot.img boot-begonia-arch.img
-          echo "Custom boot.img with custom kernel + pmOS initramfs:"
-          ls -lh boot-begonia-arch.img
-          python3 -c "
-          import struct
-          with open('boot-begonia-arch.img', 'rb') as f:
-            data = f.read(1648)
-          c = data[64:576].rstrip(b'\x00').decode('ascii', 'replace')
-          print('Cmdline:')
-          print(c)
-          print()
-          print('UUIDs stale:', 'pmos_root_uuid=' in c or 'pmos_boot_uuid=' in c)
-          print('root= present:', 'root=' in c)
-          "
-
       - name: Enable services & create user
         run: |
           sudo chroot mnt /bin/bash -c '
@@ -346,11 +227,8 @@ jobs:
 
       - name: Cleanup & release
         run: |
-          sudo umount mnt/dev/pts 2>/dev/null || true
-          sudo umount mnt/dev 2>/dev/null || true
-          sudo umount mnt/sys 2>/dev/null || true
-          sudo umount mnt/proc 2>/dev/null || true
-          sudo umount mnt 2>/dev/null || true
+          sudo umount --recursive "$GITHUB_WORKSPACE/mnt"
+          e2fsck -fn rootfs.img
 
           mkdir -p release
           mv boot-begonia-arch.img release/
@@ -388,7 +266,7 @@ jobs:
             CONFIG_SND_SOC_MT6359=m
             CONFIG_MTK_ADSP_MBOX=m
             CONFIG_MTK_SCP=m
-            CONFIG_USB_NET_RTL8152=m
+            CONFIG_USB_RTL8152=m
             CONFIG_DM_VERITY=m
             CONFIG_ZSWAP=y
             ```
@@ -402,7 +280,7 @@ jobs:
             ```
 
             **Kernel:** custom 6.16.4 (con MEMCG_V1 + CPUSETS_V1 + audio MT6359)
-            **Initramfs:** pmOS original (NO mkinitcpio)
+            **Initramfs:** pmOS con módulos del kernel compilado
             **Userspace:** Arch Linux ARM aarch64 (glibc, pacman, systemd)
 
             ### Install

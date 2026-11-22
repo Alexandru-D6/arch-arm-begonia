@@ -1,6 +1,12 @@
 #!/bin/bash
 # Run in the kernel source tree after installing the pinned pmOS .config.
 set -euo pipefail
+# Start the panel at its existing supported maximum instead of 800.
+dts=arch/arm64/boot/dts/mediatek/mt6785-xiaomi-begonia.dts
+sed -i 's/default-brightness = <800>;/default-brightness = <1879>;/' "$dts"
+grep -q 'default-brightness = <1879>;' "$dts"
+grep -q 'max-brightness = <1879>;' "$dts"
+
 scripts/config --enable MEMCG_V1 --enable CPUSETS_V1 \
     --module NF_CT_NETLINK --module NF_NAT_FTP --module NF_NAT_TFTP \
     --module SND_SOC_MT6359 --module MTK_ADSP_MBOX --module MTK_SCP \

@@ -1,0 +1,24 @@
+--- a/sound/soc/codecs/Kconfig
++++ b/sound/soc/codecs/Kconfig
+@@ -2718,3 +2718,10 @@
+ 	tristate "Qualcomm TX Macro in LPASS(Low Power Audio SubSystem)"
+ 
+ endmenu
++
++config SND_SOC_BEGONIA_TFA9874
++	tristate "Xiaomi begonia TFA9874 speaker amplifier"
++	depends on I2C
++	select REGMAP_I2C
++	help
++	  TFA9874 revision 0x0c74 with begonia's stock register profile.
+--- a/sound/soc/codecs/Makefile
++++ b/sound/soc/codecs/Makefile
+@@ -853,4 +853,6 @@
+ obj-$(CONFIG_SND_SOC_LPASS_TX_MACRO)	+= snd-soc-lpass-tx-macro.o
+ 
+ # Mux
+-obj-$(CONFIG_SND_SOC_SIMPLE_MUX)	+= snd-soc-simple-mux.o
+\ No newline at end of file
++obj-$(CONFIG_SND_SOC_SIMPLE_MUX)	+= snd-soc-simple-mux.o
++obj-$(CONFIG_SND_SOC_BEGONIA_TFA9874) += snd-soc-begonia-tfa9874.o
++snd-soc-begonia-tfa9874-y := tfa9874-begonia.o

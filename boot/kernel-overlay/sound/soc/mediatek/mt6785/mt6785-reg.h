@@ -76,4 +76,26 @@
 #define AFE_ADDA_MTKAIF_RX_CFG2                   0x0e28
 #define AFE_AUD_PAD_TOP                           0x0e40
 #define AFE_IRQ_CNT_MASK 0x3ffff
+
+#define DL2_ON_SFT                                     5
+#define DL2_MODE_SFT                                   24
+#define DL2_MODE_MASK                                  0xf
+#define DL2_MONO_SFT                                   8
+#define DL2_NORMAL_MODE_MASK_SFT                       (0x1 << 5)
+#define DL2_HD_MODE_SFT                                0
+#define IRQ2_MCU_MODE_SFT                              8
+#define IRQ2_MCU_MODE_MASK                             0xf
+#define AFE_CONN0                                 0x0020
+#define AFE_CONN1                                 0x0024
+#define AFE_I2S_CON3                              0x0040
+#define AFE_DL2_CON0                              0x0068
+#define AFE_DL2_BASE_MSB                          0x006c
+#define AFE_DL2_BASE                              0x0070
+#define AFE_DL2_CUR_MSB                           0x0074
+#define AFE_DL2_CUR                               0x0078
+#define AFE_DL2_END_MSB                           0x007c
+#define AFE_DL2_END                               0x0080
+#define AFE_IRQ_MCU_CNT2                          0x03b0
+#define AFE_APLL2_TUNER_CFG                       0x03f4
+#define AFE_HD_ENGEN_ENABLE                       0x0dd0
 #endif

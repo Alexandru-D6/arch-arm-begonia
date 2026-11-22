@@ -20,8 +20,8 @@ struct begonia_card {
 	struct snd_soc_card card;
 	struct snd_soc_jack jack;
 	struct snd_soc_aux_dev accdet;
-	struct snd_soc_dai_link links[3];
-	struct snd_soc_dai_link_component cpus[3], codecs[3], platforms[3];
+	struct snd_soc_dai_link links[5];
+	struct snd_soc_dai_link_component cpus[5], codecs[5], platforms[5];
 };
 
 static int begonia_calibrate(struct snd_soc_pcm_runtime *rtd)
@@ -89,16 +89,19 @@ static int begonia_calibrate(struct snd_soc_pcm_runtime *rtd)
 
 static const struct snd_soc_dapm_widget begonia_widgets[] = {
 	SND_SOC_DAPM_HP("AUX", NULL),
+	SND_SOC_DAPM_SPK("Speaker", NULL),
 	SND_SOC_DAPM_MIC("Internal Mic", NULL),
 };
 
 static const struct snd_kcontrol_new begonia_controls[] = {
 	SOC_DAPM_PIN_SWITCH("AUX"),
+	SOC_DAPM_PIN_SWITCH("Speaker"),
 	SOC_DAPM_PIN_SWITCH("Internal Mic"),
 };
 
 static struct snd_soc_jack_pin begonia_jack_pins[] = {
 	{ .pin = "AUX", .mask = SND_JACK_HEADPHONE },
+	{ .pin = "Speaker", .mask = SND_JACK_HEADPHONE, .invert = 1 },
 };
 
 static int begonia_accdet_init(struct snd_soc_component *component)
@@ -139,7 +142,7 @@ static int begonia_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct begonia_card *priv;
-	struct device_node *afe, *codec, *accdet;
+	struct device_node *afe, *codec, *accdet, *speaker;
 	int i, ret;
 
 	ret = devm_regulator_get_enable(dev, "vaud18");
@@ -157,6 +160,9 @@ static int begonia_probe(struct platform_device *pdev)
 	accdet = begonia_node(dev, "mediatek,accdet");
 	if (IS_ERR(accdet))
 		return PTR_ERR(accdet);
+	speaker = begonia_node(dev, "mediatek,speaker-codec");
+	if (IS_ERR(speaker))
+		return PTR_ERR(speaker);
 	priv->card = (struct snd_soc_card) {
 		.name = "begonia-aux", .owner = THIS_MODULE, .dev = dev,
 		.dai_link = priv->links, .num_links = ARRAY_SIZE(priv->links),
@@ -177,7 +183,7 @@ static int begonia_probe(struct platform_device *pdev)
 		priv->links[i].codecs = &priv->codecs[i];
 		priv->links[i].num_codecs = 1;
 		priv->links[i].id = i;
-		if (i < 2) {
+		if (i < 3) {
 			priv->codecs[i].name = "snd-soc-dummy";
 			priv->codecs[i].dai_name = "snd-soc-dummy-dai";
 			priv->links[i].dynamic = 1;
@@ -193,15 +199,27 @@ static int begonia_probe(struct platform_device *pdev)
 	priv->links[1].stream_name = "Internal Mic Capture";
 	priv->links[1].capture_only = 1;
 	priv->cpus[1].dai_name = "VUL12";
-	priv->links[2].name = "MT6359 ADDA";
-	priv->links[2].no_pcm = 1;
-	priv->links[2].init = begonia_calibrate;
-	priv->cpus[2].dai_name = "ADDA";
+	priv->links[2].name = "Speaker Playback";
+	priv->links[2].stream_name = "Speaker Playback";
+	priv->links[2].playback_only = 1;
+	priv->cpus[2].dai_name = "DL2";
+	priv->links[3].name = "MT6359 ADDA";
+	priv->links[3].no_pcm = 1;
+	priv->links[3].init = begonia_calibrate;
+	priv->cpus[3].dai_name = "ADDA";
 	/* mt6359-sound is an MFD child without an OF node. The codec parses
 	 * audio-codec under its PMIC parent, which is also its ASoC OF node.
 	 */
-	priv->codecs[2].of_node = codec;
-	priv->codecs[2].dai_name = "mt6359-snd-codec-aif1";
+	priv->codecs[3].of_node = codec;
+	priv->codecs[3].dai_name = "mt6359-snd-codec-aif1";
+	priv->links[4].name = "TFA9874 I2S3";
+	priv->links[4].no_pcm = 1;
+	priv->links[4].playback_only = 1;
+	priv->links[4].dai_fmt = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF |
+		SND_SOC_DAIFMT_CBC_CFC;
+	priv->cpus[4].dai_name = "I2S3";
+	priv->codecs[4].of_node = speaker;
+	priv->codecs[4].dai_name = "begonia-tfa9874-aif";
 	snd_soc_card_set_drvdata(&priv->card, priv);
 	ret = snd_soc_of_parse_audio_routing(&priv->card, "audio-routing");
 	if (ret)

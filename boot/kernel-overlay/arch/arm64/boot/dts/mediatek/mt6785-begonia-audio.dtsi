@@ -1,14 +1,35 @@
 // SPDX-License-Identifier: (GPL-2.0-only OR MIT)
 /* MTKAIF wiring follows Xiaomi's begonia-p-oss mt6785.dts. */
 / {
+	/* Like the sensor bus, use GPIO I2C on the native controller's pins. */
+	i2c-speaker {
+		compatible = "i2c-gpio";
+		scl-gpios = <&pio 45 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		sda-gpios = <&pio 46 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		i2c-gpio,delay-us = <5>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&begonia_i2c6_pins>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		begonia_speaker: audio-codec@34 {
+			compatible = "xiaomi,begonia-tfa9874";
+			reg = <0x34>;
+			reset-gpios = <&pio 24 GPIO_ACTIVE_HIGH>;
+			vddd-supply = <&mt6359_vio18_ldo_reg>;
+			#sound-dai-cells = <0>;
+		};
+	};
+
 	sound {
 		compatible = "xiaomi,begonia-audio";
 		mediatek,platform = <&begonia_afe>;
 		mediatek,audio-codec = <&pmic>;
 		mediatek,accdet = <&begonia_accdet>;
+		mediatek,speaker-codec = <&begonia_speaker>;
 		vaud18-supply = <&mt6359_vaud18_ldo_reg>;
 		audio-routing = "AUX", "Headphone L",
 				"AUX", "Headphone R",
+				"Speaker", "Speaker OUT",
 				"AIN0", "Internal Mic";
 	};
 
@@ -24,18 +45,45 @@
 			 <&topckgen CLK_TOP_AUDIO_INTBUS>,
 			 <&audsys CLK_AUD_AFE>,
 			 <&infracfg CLK_INFRA_AUDIO_26M>,
-			 <&audsys CLK_AUD_TML>;
-		clock-names = "infra", "audio", "bus", "afe", "mtkaif", "tml";
+			 <&audsys CLK_AUD_TML>,
+			 <&topckgen CLK_TOP_AUDIO2>,
+			 <&topckgen CLK_TOP_AUDIO_ENG2>,
+			 <&audsys CLK_AUD_24M>,
+			 <&audsys CLK_AUD_APLL2_TUNER>,
+			 <&audsys CLK_AUD_I2S3>,
+			 <&topckgen CLK_TOP_APLL12_DIV3>;
+		clock-names = "infra", "audio", "bus", "afe", "mtkaif", "tml",
+			      "apll2", "apll2-engine", "apll24m", "apll2-tuner", "i2s3", "mclk3";
 		assigned-clocks = <&topckgen CLK_TOP_AUDIO>,
-				  <&topckgen CLK_TOP_AUDIO_INTBUS>;
-		assigned-clock-parents = <&clk26m>, <&topckgen CLK_TOP_MAINPLL_D2_D4>;
+				  <&topckgen CLK_TOP_AUDIO_INTBUS>,
+				  <&topckgen CLK_TOP_AUDIO2>,
+				  <&topckgen CLK_TOP_AUDIO_ENG2>,
+				  <&topckgen CLK_TOP_APLL_I2S3>;
+		assigned-clock-parents = <&clk26m>, <&topckgen CLK_TOP_MAINPLL_D2_D4>,
+					 <&apmixedsys CLK_APMIXED_APLL2>,
+					 <&topckgen CLK_TOP_APLL2_D8>, <&topckgen CLK_TOP_AUDIO2>;
 		pinctrl-names = "default";
-		pinctrl-0 = <&begonia_mtkaif_pins>;
+		pinctrl-0 = <&begonia_mtkaif_pins &begonia_i2s3_pins>;
 		#sound-dai-cells = <0>;
 	};
+
 };
 
 &pio {
+	begonia_i2s3_pins: i2s3-pins {
+		pins {
+			pinmux = <PINMUX_GPIO67__FUNC_I2S3_LRCK>,
+				 <PINMUX_GPIO68__FUNC_I2S3_DO>,
+				 <PINMUX_GPIO71__FUNC_I2S3_BCK>;
+			bias-disable;
+		};
+	};
+	begonia_i2c6_pins: i2c6-pins {
+		pins {
+			pinmux = <PINMUX_GPIO45__FUNC_GPIO45>, <PINMUX_GPIO46__FUNC_GPIO46>;
+			bias-pull-up;
+		};
+	};
 	begonia_mtkaif_pins: mtkaif-pins {
 		pins {
 			pinmux = <PINMUX_GPIO189__FUNC_AUD_CLK_MOSI>,

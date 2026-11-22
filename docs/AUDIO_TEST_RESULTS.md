@@ -1,4 +1,43 @@
-# Handset peripheral test — 2026-11-22
+# Handset audio and peripheral tests
+
+## Internal speaker fallback — 2026-11-23
+
+The same Redmi Note 8 Pro now exposes AUX playback on PCM 0, internal microphone
+capture on PCM 1, and mono loudspeaker playback on PCM 2. The matching speaker
+boot image, modules, UCM and WirePlumber profiles were installed without replacing
+userdata. The ALSA card ID remains `begoniaaux` for compatibility.
+
+| Check | Result | Evidence and scope |
+| --- | --- | --- |
+| Amplifier identification | Pass | TFA9874 revision `0x0c74`, using the handset's stock register fields. GPIO I2C on GPIO45/46 works; the hardware I2C6 path returned `ENXIO`. Reset on GPIO24 is active-high. |
+| Internal speaker | Pass | Three-second 700 Hz tone played through `begonia_speaker_output`, status 0. User confirmed clear sound from the phone. |
+| Stereo downmix after reboot | Pass | Default-routed left-only 700 Hz and right-only 1000 Hz tones both appeared in the internal mic recording. Playback completed with status 0; capture contained exactly 240000 frames. |
+| Speaker + mic duplex | Pass, basic | Five-second 240000-frame capture while the tone played. Measured 700 Hz amplitude rose from 9 before playback to approximately 10704 during playback. This confirms acoustic output and concurrent capture, not echo cancellation. |
+| Automatic AUX selection | Pass | Connecting AUX changed the default sink to `begonia_aux_output`; the mic remained `begonia_internal_mic`. |
+| Active stream switching | Pass, basic | PipeWire links moved between stereo AUX and mono speaker as the cable was toggled. User confirmed playback moved to the speaker after unplugging. A transient link activation warning occurred during the toggle/stop test; subsequent playback completed with status 0. |
+| Idle amplifier | Pass | After the five-second sink suspend timeout, DAPM reports `Speaker Amplifier: Off`; system register `0x00` is `0x0001` (power-down, output and boost off). |
+| Boot without AUX | Pass | Speaker codec and all three PCMs enumerate automatically after reboot; AUX jack reports disconnected. MTKAIF calibration remains phases 3/3, cycles 3/3. |
+| Host/build checks | Pass | 13 host tests, shell syntax, whitespace checks, cross-compilation of the kernel/modules/DTB and repeated application of the kernel patch series. |
+
+Local artifacts are in `release/speaker-20261123/` (ignored by Git):
+`boot-begonia-speaker-v3.img`, `modules.tar.gz`, `audio-userspace.tar.gz`,
+`SHA256SUMS.txt`, `acoustic-test.txt`, `aux-connected.txt`, `switch-test.txt`,
+`speaker-unplugged.txt`, `after-switch-playback.txt`, `reboot-final.txt` and
+`after-reboot-playback.txt`.
+
+The boot image SHA-256 is
+`db583cbe6db178b23f419782ecf21aa03493096e8670993d58413c9dae0cdb75`.
+It requires the matching rootfs modules and audio profiles. The prior working
+boot is backed up on the handset as `/root/boot-before-speaker.img`, with the
+previous audio modules/profiles under `/root/begonia-audio-before-speaker/`.
+The final verified boot ID is `508d61c9-1b14-4074-be36-be6761d96016`, with
+`begonia_speaker_output` and `begonia_internal_mic` selected by default.
+
+Speaker testing covers basic playback and jack switching. Xiaomi's host DSP
+speaker protection, sustained high-volume use, thermal endurance and
+suspend/resume have not been qualified.
+
+## Original AUX and peripheral test — 2026-11-22
 
 The corrected audio boot image was flashed to the connected, unlocked Redmi
 Note 8 Pro through fastboot. Matching kernel modules, ALSA/PipeWire packages,

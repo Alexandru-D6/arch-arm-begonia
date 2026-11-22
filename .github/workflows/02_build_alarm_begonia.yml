@@ -139,7 +139,7 @@ jobs:
           for driver in r8152 ax88179_178a smsc95xx; do
             modinfo -b mnt -k "$KVER" "$driver" > /dev/null
           done
-          for driver in snd-soc-mt6785-begonia snd-soc-mt6359 mt6359-accdet; do
+          for driver in snd-soc-mt6785-begonia snd-soc-mt6359 mt6359-accdet snd-soc-begonia-tfa9874 i2c-gpio; do
             modinfo -b mnt -k "$KVER" "$driver" > /dev/null
           done
           echo "KVER=$KVER" >> "$GITHUB_ENV"
@@ -235,7 +235,7 @@ jobs:
             echo "PermitRootLogin yes" >> /etc/ssh/sshd_config
           '
 
-      - name: Install begonia AUX and internal microphone profile
+      - name: Install begonia AUX, speaker and internal microphone profile
         run: |
           sudo bash rootfs/install-audio.sh "$GITHUB_WORKSPACE/mnt" alarm
           test -f mnt/usr/share/alsa/ucm2/conf.d/begonia-aux/begonia-aux.conf
@@ -269,7 +269,7 @@ jobs:
             | Mejora | Detalle |
             |---|---|
             | 🐉 **Waydroid** | CGroups v1 habilitado → Android 13 (LineageOS) bootea dentro del contenedor |
-            | 🔊 **Audio** | Ruta experimental MT6785/MT6359 para AUX + micrófono interno, UCM2 y PipeWire; pendiente de validación física |
+            | 🔊 **Audio** | AUX + altavoz interno automático + micrófono interno, UCM2 y PipeWire; pruebas básicas en begonia, validación prolongada pendiente |
             | 🔌 **USB** | RTL8152 (Ethernet USB) + módems por puerto serie |
             | 📦 **DM_VERITY** | Integridad de bloques para imágenes Android |
             | ⚡ **ZSWAP** | Compresión de swap en RAM (mejora rendimiento) |

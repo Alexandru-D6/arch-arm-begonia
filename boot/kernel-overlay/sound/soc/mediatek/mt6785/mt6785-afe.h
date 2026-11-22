@@ -7,6 +7,7 @@
 
 struct mt6785_afe {
 	struct clk_bulk_data clocks[6];
+	struct clk_bulk_data speaker_clocks[6];
 	struct regmap *topckgen;
 };
 

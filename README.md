@@ -165,7 +165,7 @@ tailscale up --accept-routes
 | **GPU** | ✅ | Panfrost (Mali-G76) |
 | **WiFi interno** | ❌ | MT7663 — sin driver mainline |
 | **Bluetooth** | ❌ | MT7663 — sin driver mainline |
-| **Audio** | ✅ | AUX estéreo + micrófono interno verificados con ALSA/PipeWire, reconexión y reinicio. Pendiente de validación prolongada en coche. [Resultados](docs/AUDIO_TEST_RESULTS.md) · [Prueba de 5 segundos](docs/AUDIO.md) |
+| **Audio** | ✅ | AUX estéreo + micrófono interno verificados con ALSA/PipeWire. Altavoz interno automático al desconectar AUX, probado en el teléfono. Pendiente de validación prolongada en coche. [Resultados](docs/AUDIO_TEST_RESULTS.md) · [Prueba de 5 segundos](docs/AUDIO.md) |
 | **Cámara** | ❌ | En desarrollo |
 | **Módem 4G** | ❌ | MT6779 — sin driver mainline |
 | **Batería (FGU)** | ⏳ | En port desde vendor kernel |

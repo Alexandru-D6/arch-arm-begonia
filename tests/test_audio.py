@@ -185,6 +185,40 @@ class AudioTest(unittest.TestCase):
         names = {rule["actions"]["update-props"].get("node.name") for rule in rules}
         self.assertTrue({"begonia_internal_mic", "begonia_aux_output"} <= names)
 
+        outputs = {rule["actions"]["update-props"].get("node.name"):
+                   rule["actions"]["update-props"] for rule in rules}
+        speaker = outputs["begonia_speaker_output"]
+        aux = outputs["begonia_aux_output"]
+        self.assertEqual(speaker["audio.channels"], 1)
+        self.assertEqual(speaker["audio.position"], ["MONO"])
+        self.assertGreater(aux["priority.session"], speaker["priority.session"])
+
+    def test_ucm_speaker_uses_mono_pcm_and_aux_mutes_it(self):
+        library = ctypes.util.find_library("asound")
+        if not library:
+            self.skipTest("libasound is not installed")
+        alsa = ctypes.CDLL(library)
+        config, stream = ctypes.c_void_p(), ctypes.c_void_p()
+        path = REPO / "rootfs/audio/ucm2/MediaTek/begonia-aux/HiFi.conf"
+        self.assertEqual(alsa.snd_config_top(ctypes.byref(config)), 0)
+        try:
+            self.assertEqual(alsa.snd_input_stdio_open(ctypes.byref(stream), os.fsencode(path), b"r"), 0)
+            try:
+                self.assertEqual(alsa.snd_config_load(config, stream), 0)
+            finally:
+                alsa.snd_input_close(stream)
+            node, value = ctypes.c_void_p(), ctypes.c_char_p()
+            for key, expected in (
+                ("SectionDevice.Speaker.Value.PlaybackPCM", "hw:${CardId},2"),
+                ("SectionDevice.Headphones.Value.JackHWMute", "Speaker"),
+                ("SectionDevice.Mic1.Value.CapturePCM", "hw:${CardId},1"),
+            ):
+                self.assertEqual(alsa.snd_config_search(config, key.encode(), ctypes.byref(node)), 0)
+                self.assertEqual(alsa.snd_config_get_string(node, ctypes.byref(value)), 0)
+                self.assertEqual(value.value.decode(), expected)
+        finally:
+            alsa.snd_config_delete(config)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -23,7 +23,7 @@
 #include "../common/mtk-afe-fe-dai.h"
 #include "../common/mtk-afe-platform-driver.h"
 
-enum { DL1, VUL12, MEMIF_COUNT, ADDA = MEMIF_COUNT };
+enum { DL1, VUL12, DL2, MEMIF_COUNT, ADDA = MEMIF_COUNT, I2S3 };
 
 static const struct snd_pcm_hardware mt6785_pcm_hardware = {
 	.info = SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_INTERLEAVED |
@@ -73,6 +73,21 @@ static const struct mtk_base_memif_data mt6785_memifs[] = {
 		.hd_align_reg = -1,
 		.agent_disable_reg = -1, .msb_reg = -1,
 	},
+	[DL2] = {
+		.name = "DL2", .id = DL2,
+		.reg_ofs_base = AFE_DL2_BASE, .reg_ofs_cur = AFE_DL2_CUR,
+		.reg_ofs_end = AFE_DL2_END,
+		.reg_ofs_base_msb = AFE_DL2_BASE_MSB,
+		.reg_ofs_cur_msb = AFE_DL2_CUR_MSB,
+		.reg_ofs_end_msb = AFE_DL2_END_MSB,
+		.fs_reg = AFE_DL2_CON0, .fs_shift = DL2_MODE_SFT,
+		.fs_maskbit = DL2_MODE_MASK,
+		.mono_reg = AFE_DL2_CON0, .mono_shift = DL2_MONO_SFT,
+		.enable_reg = AFE_DAC_CON0, .enable_shift = DL2_ON_SFT,
+		.hd_reg = AFE_DL2_CON0, .hd_shift = DL2_HD_MODE_SFT,
+		.hd_align_reg = -1,
+		.agent_disable_reg = -1, .msb_reg = -1,
+	},
 };
 
 static const struct mtk_base_irq_data mt6785_irqs[] = {
@@ -92,6 +107,14 @@ static const struct mtk_base_irq_data mt6785_irqs[] = {
 		.irq_fs_maskbit = IRQ1_MCU_MODE_MASK,
 		.irq_en_reg = AFE_IRQ_MCU_CON0, .irq_en_shift = 1,
 		.irq_clr_reg = AFE_IRQ_MCU_CLR, .irq_clr_shift = 1,
+	}, {
+		.id = 2, .irq_cnt_reg = AFE_IRQ_MCU_CNT2,
+		.irq_cnt_maskbit = AFE_IRQ_CNT_MASK,
+		.irq_fs_reg = AFE_IRQ_MCU_CON1,
+		.irq_fs_shift = IRQ2_MCU_MODE_SFT,
+		.irq_fs_maskbit = IRQ2_MCU_MODE_MASK,
+		.irq_en_reg = AFE_IRQ_MCU_CON0, .irq_en_shift = 2,
+		.irq_clr_reg = AFE_IRQ_MCU_CLR, .irq_clr_shift = 2,
 	},
 };
 
@@ -103,7 +126,7 @@ static irqreturn_t mt6785_interrupt(int irq, void *data)
 
 	if (regmap_read(afe->regmap, AFE_IRQ_MCU_STATUS, &status))
 		return IRQ_NONE;
-	status &= 3;
+	status &= 7;
 	if (!status)
 		return IRQ_NONE;
 	regmap_write(afe->regmap, AFE_IRQ_MCU_CLR, status);
@@ -155,14 +178,62 @@ static const struct snd_soc_dai_ops mt6785_adda_ops = {
 	.channels_max = 2, .rates = SNDRV_PCM_RATE_48000, \
 	.formats = SNDRV_PCM_FMTBIT_S16_LE }
 
+static int mt6785_i2s3_params(struct snd_pcm_substream *substream,
+			    struct snd_pcm_hw_params *params, struct snd_soc_dai *dai)
+{
+	struct mtk_base_afe *afe = snd_soc_dai_get_drvdata(dai);
+
+	if (params_rate(params) != 48000 || params_channels(params) != 1)
+		return -EINVAL;
+	/* Stereo 32-bit I2S slots; the mono DL2 sample feeds the left slot.
+	 * Matches the TFA9874's factory 64-BCLK, 24-bit sample framing.
+	 */
+	return regmap_update_bits(afe->regmap, AFE_I2S_CON3, 0xfffffffe,
+				  (10 << 8) | BIT(3) | BIT(1) | BIT(12));
+}
+
+static const struct snd_soc_dai_ops mt6785_i2s3_ops = {
+	.hw_params = mt6785_i2s3_params,
+};
+
+static int mt6785_speaker_clock_event(struct snd_soc_dapm_widget *w,
+				    struct snd_kcontrol *control, int event)
+{
+	struct snd_soc_component *component = snd_soc_dapm_to_component(w->dapm);
+	struct mtk_base_afe *afe = snd_soc_component_get_drvdata(component);
+	struct mt6785_afe *priv = afe->platform_priv;
+	int ret;
+
+	if (event == SND_SOC_DAPM_PRE_PMU) {
+		ret = clk_bulk_prepare_enable(ARRAY_SIZE(priv->speaker_clocks), priv->speaker_clocks);
+		if (ret)
+			return ret;
+		regmap_update_bits(afe->regmap, AFE_APLL2_TUNER_CFG, 0xfff7, 0x635);
+		regmap_update_bits(afe->regmap, AFE_HD_ENGEN_ENABLE, BIT(1), BIT(1));
+	} else {
+		regmap_update_bits(afe->regmap, AFE_HD_ENGEN_ENABLE, BIT(1), 0);
+		regmap_update_bits(afe->regmap, AFE_APLL2_TUNER_CFG, BIT(0), 0);
+		clk_bulk_disable_unprepare(ARRAY_SIZE(priv->speaker_clocks), priv->speaker_clocks);
+	}
+	return 0;
+}
+
 static struct snd_soc_dai_driver mt6785_dais[] = {
 	{ .name = "DL1", .id = DL1, .playback = MT6785_STREAM("DL1"),
 	  .ops = &mtk_afe_fe_ops },
 	{ .name = "VUL12", .id = VUL12, .capture = MT6785_STREAM("VUL12"),
 	  .ops = &mtk_afe_fe_ops },
+	{ .name = "DL2", .id = DL2, .playback = {
+		.stream_name = "DL2", .channels_min = 1, .channels_max = 1,
+		.rates = SNDRV_PCM_RATE_48000, .formats = SNDRV_PCM_FMTBIT_S16_LE },
+	  .ops = &mtk_afe_fe_ops },
 	{ .name = "ADDA", .id = ADDA,
 	  .playback = MT6785_STREAM("ADDA Playback"),
 	  .capture = MT6785_STREAM("ADDA Capture"), .ops = &mt6785_adda_ops },
+	{ .name = "I2S3", .id = I2S3, .playback = {
+		.stream_name = "I2S3 Playback", .channels_min = 1, .channels_max = 1,
+		.rates = SNDRV_PCM_RATE_48000, .formats = SNDRV_PCM_FMTBIT_S16_LE },
+	  .ops = &mt6785_i2s3_ops },
 };
 
 static int mt6785_ul_event(struct snd_soc_dapm_widget *w,
@@ -183,6 +254,9 @@ static const struct snd_soc_dapm_widget mt6785_widgets[] = {
 	SND_SOC_DAPM_SUPPLY("DAC Predis Clock", AUDIO_TOP_CON0,
 			    26, 1, NULL, 0),
 	SND_SOC_DAPM_SUPPLY("ADC Clock", AUDIO_TOP_CON0, 24, 1, NULL, 0),
+	SND_SOC_DAPM_SUPPLY_S("Speaker Clocks", 0, SND_SOC_NOPM, 0, 0,
+		mt6785_speaker_clock_event, SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMD),
+	SND_SOC_DAPM_SUPPLY_S("I2S3 Enable", 1, AFE_I2S_CON3, 0, 0, NULL, 0),
 };
 
 /* Fixed, independent routes: DL1 -> O3/O4; I3/I4 -> O21/O22 -> VUL12. */
@@ -197,6 +271,9 @@ static const struct snd_soc_dapm_route mt6785_routes[] = {
 	{ "ADDA Capture", NULL, "MTKAIF RX FIFO" },
 	{ "ADDA Capture", NULL, "ADDA UL Enable" },
 	{ "ADDA Capture", NULL, "ADC Clock" },
+	{ "I2S3 Playback", NULL, "DL2" },
+	{ "I2S3 Playback", NULL, "Speaker Clocks" },
+	{ "I2S3 Playback", NULL, "I2S3 Enable" },
 };
 
 static int mt6785_component_probe(struct snd_soc_component *component)
@@ -240,7 +317,7 @@ static int mt6785_runtime_suspend(struct device *dev)
 				       !(value & AFE_ON_RETM_MASK_SFT), 20, 1000000);
 	if (ret)
 		return ret;
-	regmap_write(afe->regmap, AFE_IRQ_MCU_CLR, 3);
+	regmap_write(afe->regmap, AFE_IRQ_MCU_CLR, 7);
 	clk_bulk_disable_unprepare(ARRAY_SIZE(priv->clocks), priv->clocks);
 	return 0;
 }
@@ -286,6 +363,20 @@ int mt6785_afe_probe(struct platform_device *pdev)
 	ret = devm_clk_bulk_get(dev, ARRAY_SIZE(priv->clocks), priv->clocks);
 	if (ret)
 		return dev_err_probe(dev, ret, "audio clocks\n");
+	{
+		static const char * const names[] = {
+			"apll2", "apll2-engine", "apll24m", "apll2-tuner", "i2s3", "mclk3",
+		};
+
+		for (i = 0; i < ARRAY_SIZE(names); i++)
+			priv->speaker_clocks[i].id = names[i];
+		ret = devm_clk_bulk_get(dev, ARRAY_SIZE(names), priv->speaker_clocks);
+		if (ret)
+			return dev_err_probe(dev, ret, "speaker clocks\n");
+		ret = clk_set_rate(priv->speaker_clocks[5].clk, 12288000);
+		if (ret)
+			return dev_err_probe(dev, ret, "speaker master clock\n");
+	}
 	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32));
 	if (ret)
 		return ret;
@@ -316,15 +407,19 @@ int mt6785_afe_probe(struct platform_device *pdev)
 	ret = devm_add_action_or_reset(dev, mt6785_power_off, dev);
 	if (ret)
 		return ret;
-	regmap_write(afe->regmap, AFE_IRQ_MCU_EN, 3);
+	regmap_write(afe->regmap, AFE_IRQ_MCU_EN, 7);
 	regmap_write(afe->regmap, AFE_IRQ_MCU_SCP_EN, 0);
 	regmap_write(afe->regmap, AFE_IRQ_MCU_CON0, 0);
-	regmap_write(afe->regmap, AFE_IRQ_MCU_CLR, 3);
+	regmap_write(afe->regmap, AFE_IRQ_MCU_CLR, 7);
 	regmap_update_bits(afe->regmap, AFE_DL1_CON0,
 			   DL1_NORMAL_MODE_MASK_SFT, DL1_NORMAL_MODE_MASK_SFT);
 	regmap_update_bits(afe->regmap, AFE_VUL12_CON0,
 			   VUL12_NORMAL_MODE_MASK_SFT | VUL12_4CH_EN_MASK_SFT,
 			   VUL12_NORMAL_MODE_MASK_SFT);
+	regmap_update_bits(afe->regmap, AFE_DL2_CON0,
+			   DL2_NORMAL_MODE_MASK_SFT, DL2_NORMAL_MODE_MASK_SFT);
+	regmap_write(afe->regmap, AFE_CONN0, BIT(7));
+	regmap_write(afe->regmap, AFE_CONN1, BIT(7));
 	regmap_write(afe->regmap, AFE_CONN3, BIT(5));
 	regmap_write(afe->regmap, AFE_CONN4, BIT(6));
 	regmap_write(afe->regmap, AFE_CONN21, BIT(3));

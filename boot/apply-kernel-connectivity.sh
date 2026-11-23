@@ -11,12 +11,14 @@ if [ ! -f "$archive" ]; then
 fi
 printf '%s  %s\n' "$digest" "$archive" | sha512sum -c -
 tar -xzf "$archive" --strip-components=1 "linux-$commit/drivers/misc/mediatek"
-patch_file="$script_dir/kernel-patches/begonia-connectivity.patch"
-if patch --batch --silent --forward --dry-run -p1 < "$patch_file" >/dev/null 2>&1; then
-    patch --batch --silent --forward -p1 < "$patch_file"
-elif patch --batch --silent --dry-run -R -p1 < "$patch_file" >/dev/null 2>&1; then
-    echo 'Connectivity patch already applied'
-else
-    echo 'Cannot apply connectivity patch to this kernel' >&2
-    exit 1
-fi
+for name in begonia-connectivity.patch begonia-wifi-irq-logging.patch; do
+    patch_file="$script_dir/kernel-patches/$name"
+    if patch --batch --silent --forward --dry-run -p1 < "$patch_file" >/dev/null 2>&1; then
+        patch --batch --silent --forward -p1 < "$patch_file"
+    elif patch --batch --silent --dry-run -R -p1 < "$patch_file" >/dev/null 2>&1; then
+        echo "Already applied: $name"
+    else
+        echo "Cannot apply kernel patch $name to this kernel" >&2
+        exit 1
+    fi
+done

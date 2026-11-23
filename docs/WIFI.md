@@ -62,6 +62,35 @@ release's early-boot module tree and preserves its original startup scripts and
 touch firmware. The flashed boot image was compared against the partition
 before reboot.
 
+## Interrupt debug logging correction
+
+The initial driver printed `mtk_axi_interrupt: N callbacks suppressed` every
+few seconds. Its interrupt handler called `__ratelimit()` before `pr_debug()`,
+even when that debug message was disabled. The rate limiter consequently
+reported suppressed log calls at warning level. The count refers to logging
+calls, not dropped network packets or skipped interrupt handling.
+
+`begonia-wifi-irq-logging.patch` replaces that pair with
+`pr_debug_ratelimited()`, which checks whether the debug message is enabled
+before invoking the rate limiter. The connectivity installer applies this
+patch after extracting the pinned driver source, including on repeated runs.
+The interrupt processing itself is unchanged.
+
+The corrected `wlan_gen4m.ko` was installed on 2026-11-23, with the previous
+module saved as
+`/home/alarm/wifi-install-backup/wlan_gen4m-before-irq-log-fix.ko`.
+After reboot, the phone automatically reconnected to Guest1 at
+`192.168.1.130/24`. A Wi-Fi-bound test received 30/30 ping replies with no loss
+and mean latency 3.433 ms; HTTPS returned HTTP 200. The Wi-Fi interrupt counter
+was advancing and the kernel log contained zero matching suppression messages
+for the entire boot. The new module's SHA-256 is
+`095824d11cef05e26ffcfb3e243bd8a95178ee8cdedd9bc4273f02b33ec935af`.
+
+The local installation bundle includes this correction. Its boot image is
+unchanged: the Wi-Fi module loads from the root filesystem after boot.
+Detailed results are in `linux-kernel/wifi-irq-log-fix-results.tar.gz` and
+the build output is in `linux-kernel/wifi-irq-logging-build.log`.
+
 ## Artifacts and recovery
 
 Local artifacts (ignored by Git) are under `linux-kernel/`:

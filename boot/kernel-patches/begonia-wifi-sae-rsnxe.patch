@@ -1,0 +1,140 @@
+--- a/drivers/misc/mediatek/connectivity/wlan/gen4m/include/nic/mac.h
++++ b/drivers/misc/mediatek/connectivity/wlan/gen4m/include/nic/mac.h
+@@ -988,6 +988,7 @@
+ 	45	/* HT Capabilities subelement */
+ #define ELEM_ID_QOS_CAP \
+ 	46	/* QoS capability */
++#define ELEM_ID_RSNX 244 /* RSN Extension: SAE H2E capabilities */
+ #define ELEM_ID_RSN \
+ 	48	/* RSN IE */
+ #define ELEM_ID_EXTENDED_SUP_RATES \
+--- a/drivers/misc/mediatek/connectivity/wlan/gen4m/include/nic/p2p.h
++++ b/drivers/misc/mediatek/connectivity/wlan/gen4m/include/nic/p2p.h
+@@ -374,6 +374,10 @@
+ 	uint16_t u2WpaIeLen;
+ 	uint8_t aucWpaIeBuffer[ELEM_HDR_LEN + ELEM_MAX_LEN_WPA];
+ 
++	/* Preserve userspace RSNXE alongside RSNE in rebuilt AP frames. */
++	uint16_t u2RsnxIeLen;
++	uint8_t aucRsnxIeBuffer[ELEM_HDR_LEN + 255];
++
+ 	uint16_t u2RsnIeLen;
+ 	uint8_t aucRsnIeBuffer[ELEM_HDR_LEN + ELEM_MAX_LEN_RSN];
+ };
+--- a/drivers/misc/mediatek/connectivity/wlan/gen4m/include/mgmt/rsn.h
++++ b/drivers/misc/mediatek/connectivity/wlan/gen4m/include/mgmt/rsn.h
+@@ -234,6 +234,12 @@
+ void rsnGenerateWPAIE(IN struct ADAPTER *prAdapter,
+ 		      IN struct MSDU_INFO *prMsduInfo);
+ 
++uint32_t rsnCalculateRsnxIELen(struct ADAPTER *prAdapter,
++	uint8_t ucBssIndex, struct STA_RECORD *prStaRec);
++
++void rsnGenerateRsnxIE(struct ADAPTER *prAdapter,
++	struct MSDU_INFO *prMsduInfo);
++
+ void rsnGenerateRSNIE(IN struct ADAPTER *prAdapter,
+ 		      IN struct MSDU_INFO *prMsduInfo);
+ 
+--- a/drivers/misc/mediatek/connectivity/wlan/gen4m/mgmt/rsn.c
++++ b/drivers/misc/mediatek/connectivity/wlan/gen4m/mgmt/rsn.c
+@@ -3661,3 +3661,39 @@
+ 
+ 	return FALSE;
+ }
++
++/* The AP SME owns RSNXE content. Dropping it while rebuilding beacons or
++ * probe responses makes SAE H2E negotiation and EAPOL message 3 disagree.
++ */
++uint32_t rsnCalculateRsnxIELen(struct ADAPTER *prAdapter,
++	uint8_t ucBssIndex, struct STA_RECORD *prStaRec)
++{
++	struct BSS_INFO *bss;
++	struct P2P_SPECIFIC_BSS_INFO *p2p;
++
++	if (!prAdapter->fgIsP2PRegistered ||
++	    ucBssIndex >= prAdapter->ucHwBssIdNum)
++		return 0;
++	bss = GET_BSS_INFO_BY_INDEX(prAdapter, ucBssIndex);
++	if (!bss || !IS_BSS_APGO(bss) || bss->u4PrivateData >= KAL_P2P_NUM)
++		return 0;
++	p2p = prAdapter->rWifiVar.prP2pSpecificBssInfo[bss->u4PrivateData];
++	return p2p ? p2p->u2RsnxIeLen : 0;
++}
++
++void rsnGenerateRsnxIE(struct ADAPTER *prAdapter,
++	struct MSDU_INFO *prMsduInfo)
++{
++	uint32_t len = rsnCalculateRsnxIELen(prAdapter,
++		prMsduInfo->ucBssIndex, NULL);
++	struct BSS_INFO *bss;
++	struct P2P_SPECIFIC_BSS_INFO *p2p;
++
++	if (!len)
++		return;
++	bss = GET_BSS_INFO_BY_INDEX(prAdapter, prMsduInfo->ucBssIndex);
++	p2p = prAdapter->rWifiVar.prP2pSpecificBssInfo[bss->u4PrivateData];
++	kalMemCopy((uint8_t *)prMsduInfo->prPacket + prMsduInfo->u2FrameLength,
++		p2p->aucRsnxIeBuffer, len);
++	prMsduInfo->u2FrameLength += len;
++}
+--- a/drivers/misc/mediatek/connectivity/wlan/gen4m/mgmt/p2p_func.c
++++ b/drivers/misc/mediatek/connectivity/wlan/gen4m/mgmt/p2p_func.c
+@@ -71,6 +71,7 @@
+ 			rlmRspGenerateHtOpIE}	/* 61 */
+ 	, {(ELEM_HDR_LEN + ELEM_MAX_LEN_RSN), NULL,
+ 			rsnGenerateRSNIE}	/* 48 */
++	, {0, rsnCalculateRsnxIELen, rsnGenerateRsnxIE}	/* 244 */
+ 	, {(ELEM_HDR_LEN + ELEM_MAX_LEN_OBSS_SCAN), NULL,
+ 			rlmRspGenerateObssScanIE}	/* 74 */
+ 	, {(ELEM_HDR_LEN + ELEM_MAX_LEN_EXT_CAP), NULL,
+@@ -3730,6 +3731,7 @@
+ 		prP2pSpecificBssInfo->u2AttributeLen = 0;
+ 		prP2pSpecificBssInfo->u2WpaIeLen = 0;
+ 		prP2pSpecificBssInfo->u2RsnIeLen = 0;
++		prP2pSpecificBssInfo->u2RsnxIeLen = 0;
+ 
+ 		ASSERT_BREAK(pucIEInfo != NULL);
+ 
+@@ -3952,6 +3954,13 @@
+ 					HT_CAP_IE(pucIE)->ucAselCap
+ 					== ASEL_CAP_DEFAULT_VAL);
+ #endif
++				}
++				break;
++			case ELEM_ID_RSNX:
++				if (IE_LEN(pucIE) >= 1) {
++					kalMemCopy(prP2pSpecificBssInfo->aucRsnxIeBuffer,
++						pucIE, IE_SIZE(pucIE));
++					prP2pSpecificBssInfo->u2RsnxIeLen = IE_SIZE(pucIE);
+ 				}
+ 				break;
+ 			case ELEM_ID_RSN:	/* 48 *//* V */
+--- a/drivers/misc/mediatek/connectivity/wlan/gen4m/mgmt/bss.c
++++ b/drivers/misc/mediatek/connectivity/wlan/gen4m/mgmt/bss.c
+@@ -127,6 +127,7 @@
+ 	   rsnGenerateWPAIE}	/* 221 */
+ 	, {(ELEM_HDR_LEN + ELEM_MAX_LEN_RSN), NULL,
+ 	   rsnGenerateRSNIE}	/* 48 */
++	, {0, rsnCalculateRsnxIELen, rsnGenerateRsnxIE}	/* 244 */
+ 	, {0, p2pFuncCalculateP2p_IELenForBeacon,
+ 	   p2pFuncGenerateP2p_IEForBeacon}	/* 221 */
+ 	, {0, p2pFuncCalculateWSC_IELenForBeacon,
+@@ -173,6 +174,7 @@
+ 	   rsnGenerateWPAIE}	/* 221 */
+ 	, {(ELEM_HDR_LEN + ELEM_MAX_LEN_RSN), NULL,
+ 	   rsnGenerateRSNIE}	/* 48 */
++	, {0, rsnCalculateRsnxIELen, rsnGenerateRsnxIE}	/* 244 */
+ 	, {(ELEM_HDR_LEN + ELEM_MAX_LEN_OBSS_SCAN), NULL,
+ 	   rlmRspGenerateObssScanIE}	/* 74 */
+ #endif
+--- a/drivers/misc/mediatek/connectivity/wlan/gen4m/mgmt/assoc.c
++++ b/drivers/misc/mediatek/connectivity/wlan/gen4m/mgmt/assoc.c
+@@ -138,6 +138,7 @@
+ };
+ 
+ struct APPEND_VAR_IE_ENTRY txAssocRespIETable[] = {
++	{0, rsnCalculateRsnxIELen, rsnGenerateRsnxIE},
+ 	{(ELEM_HDR_LEN + ELEM_MAX_LEN_ERP), NULL, rlmRspGenerateErpIE}
+ 	,			/* 42 */
+ 	{(ELEM_HDR_LEN + ELEM_MAX_LEN_HT_CAP), NULL, rlmRspGenerateHtCapIE}

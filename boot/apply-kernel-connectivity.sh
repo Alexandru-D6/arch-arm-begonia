@@ -11,7 +11,9 @@ if [ ! -f "$archive" ]; then
 fi
 printf '%s  %s\n' "$digest" "$archive" | sha512sum -c -
 tar -xzf "$archive" --strip-components=1 "linux-$commit/drivers/misc/mediatek"
-for name in begonia-connectivity.patch begonia-wifi-irq-logging.patch begonia-wifi-mgmt-registration.patch; do
+for name in begonia-connectivity.patch begonia-wifi-irq-logging.patch \
+    begonia-wifi-mgmt-registration.patch begonia-wifi-regulatory.patch \
+    begonia-wifi-channel-notify.patch begonia-wifi-sae-rsnxe.patch; do
     patch_file="$script_dir/kernel-patches/$name"
     if patch --batch --silent --forward --dry-run -p1 < "$patch_file" >/dev/null 2>&1; then
         patch --batch --silent --forward -p1 < "$patch_file"

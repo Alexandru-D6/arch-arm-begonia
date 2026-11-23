@@ -109,8 +109,8 @@ the regulatory notifier called `wiphy_apply_custom_regulatory()`, which
 reacquired RTNL while the regulatory worker already held it. NetworkManager
 then blocked waiting for RTNL during hotspot preparation. The phone was
 rebooted to recover, and the 2.4 GHz test uses its existing channel rules.
-The runtime country-setting bug remains unresolved; 5 GHz hotspot operation
-is not verified. Stack traces and activation logs are saved on the phone
+The subsequent regulatory patch fixes this deadlock; the 5 GHz results are
+recorded below. Stack traces and activation logs are saved on the phone
 under `/home/alarm/hotspot-test/`.
 
 ### Client connection failure and correction
@@ -150,8 +150,9 @@ while `wlan0` remained connected to Guest1. Full PSK-SHA256 support is not
 verified; the working configuration explicitly uses WPA2-PSK only.
 
 The installed `begonia-hotspot-test` helper starts the saved NetworkManager
-AP profile and applies that compatibility setting to the current supplicant
-network. It avoids restarting an already compatible AP. The helper was run
+AP profile and applies the appropriate WPA2 or WPA3 settings to the current
+supplicant network. It preserves SAE profiles and avoids restarting an already
+compatible AP. The helper was run
 again with the client connected, and the client remained authorized with its
 DHCP lease intact. To restart this test hotspot after boot:
 
@@ -172,6 +173,122 @@ contains the tested module and helper. Diagnostic logging was disabled after
 the test. Build output is `linux-kernel/wifi-mgmt-registration-build.log`;
 DHCP, authorization and helper results are saved in
 `linux-kernel/hotspot-working-results.tar.gz`.
+
+## 5 GHz and WPA3-SAE results
+
+On 2026-11-23 the other phone connected and accessed the Internet in all three
+configurations below. Actual frequency and negotiated security were checked
+on the running AP, rather than inferred from the saved profile.
+
+| AP configuration | Verified result |
+| --- | --- |
+| WPA2-PSK, channel 36 | 5180 MHz; authorized client, DHCP and Internet traffic |
+| WPA3-SAE, hunting-and-pecking | 5180 MHz; SAE AKM `00-0f-ac-8`, required PMF, DHCP and Internet |
+| WPA3-SAE, H2E | 5180 MHz; supplicant logged `H2E=1`, completed SAE and the four-way handshake; client authorized with `[MFP]`, DHCP and Internet |
+
+The test phone was a Nothing Phone 3a Pro running Android 17. The final SAE
+client lease was `10.42.0.137`. The user confirmed Internet access for each
+configuration. This covers basic connectivity with one client; throughput,
+suspend/resume, DFS channels, long sessions and additional clients remain
+untested.
+
+Three additional driver patches are applied by the connectivity helper:
+
+- `begonia-wifi-regulatory.patch` removes the runtime call to
+  `wiphy_apply_custom_regulatory()` inside the regulatory notifier. Initial
+  pre-registration custom-domain setup remains; runtime notifications use the
+  channel rules already applied by cfg80211 and propagate them to firmware.
+  `iw reg set ES`, regulatory queries and NetworkManager remained responsive
+  after this correction.
+- `begonia-wifi-channel-notify.patch` replaces the stale, partly uninitialized
+  cached channel definition with a freshly initialized definition using the
+  wiphy's real channel. It checks validity and notifies the actual AP netdev.
+  The previous `nl80211_send_chandef` warning was reproduced during a band
+  switch; no matching warning or call trace occurred after the correction,
+  including a subsequent forced 5-to-2.4 GHz switch.
+- `begonia-wifi-sae-rsnxe.patch` caches the supplicant's RSN Extension element
+  and preserves it in rebuilt AP beacons, probe responses and association
+  responses, with space included in frame allocation estimates. Previously
+  the driver dropped this element, so modern clients selected the older SAE
+  exchange while the supplicant advertised H2E capabilities in its key
+  handshake. The client did not complete the handshake. Disabling H2E first
+  demonstrated working SAE; preserving RSNXE then enabled successful H2E.
+
+The installed final module has SHA-256
+`b15b64b8289eddcf5b7ccd6a942c6dae3637a6510a542191234ca5a3e91e010d`.
+The pre-RSNXE module is saved on the phone as
+`/home/alarm/wifi-install-backup/wlan_gen4m-before-rsnxe-fix.ko`.
+The boot image is unchanged. Module compilation and dependency/symbol checks
+passed; all patches were checked on clean and repeated application. The final
+boot had no kernel warning, call trace or interrupt suppression messages.
+
+### Keep the hotspot on 5 GHz
+
+This firmware reports DBDC unsupported. A 5 GHz AP with a 2.4 GHz Guest1
+upstream was automatically moved to Guest1's channel 3 (2422 MHz). An initial
+Internet test therefore established connectivity but did **not** establish
+5 GHz operation. The confirmed 5 GHz tests disconnected the Wi-Fi station
+interfaces and supplied Internet over USB instead. The helper requires those
+interfaces to be unmanaged for a 5 GHz profile, to prevent automatic
+reconnection from moving the AP to another band.
+
+Saved phone profiles have autoconnect disabled:
+
+| Profile | SSID | Security |
+| --- | --- | --- |
+| `Begonia-Hotspot-Test` | `Begonia-Test` | WPA2, 2.4 GHz |
+| `Begonia-5GHz-Test` | `Begonia-5G-Test` | WPA2, channel 36 |
+| `Begonia-5GHz-SAE-Test` | `Begonia-5G-SAE` | WPA3-SAE only, required PMF, channel 36 |
+
+To start the saved 5 GHz SAE profile after boot, with a separate working
+upstream already configured:
+
+```sh
+sudo nmcli device set wlan0 managed no
+sudo nmcli device set wlan1 managed no
+sudo iw reg set ES # Use the actual operating country.
+sudo begonia-hotspot-test Begonia-5GHz-SAE-Test
+```
+
+The helper retains `key-mgmt=sae`, requires PMF, selects RSN/CCMP and enables
+both SAE password-exchange methods (`sae_pwe=2`). It also checks the running
+AP frequency. A repeated invocation with these settings leaves the authorized
+client connected. Use `Begonia-5GHz-Test` as the helper argument for WPA2.
+After a NetworkManager or supplicant restart, rerun the helper to apply its
+runtime compatibility settings.
+
+For the physical test, the computer's temporary NetworkManager profile
+`begonia-usb-internet-test` used shared IPv4 on its USB interface with
+`172.16.42.2/24`, autoconnect disabled, and host dnsmasq installed. The phone
+used its existing `172.16.42.1` USB address and the following temporary setup:
+
+```sh
+sudo ip route replace default via 172.16.42.2 dev usb0 metric 100
+sudo resolvectl dns usb0 172.16.42.2
+sudo resolvectl domain usb0 '~.'
+sudo resolvectl default-route usb0 yes
+sudo sysctl -w net.ipv4.conf.usb0.forwarding=1
+```
+
+The test also placed `server=172.16.42.2` in
+`/etc/NetworkManager/dnsmasq-shared.d/begonia-usb-test.conf` before activating
+the AP. Shared-mode AP forwarding is set by NetworkManager; unmanaged USB
+forwarding required the explicit sysctl above. Without it, the client could
+join but had no Internet. These are test-machine settings, not image defaults.
+The repository stores no hotspot password.
+
+To return to Guest1 client use, stop the AP, remove the temporary dnsmasq
+server file, run `resolvectl revert usb0`, remove the USB default route, and
+set `wlan0` and `wlan1` back to `managed yes`. The computer's original USB
+profile `begonia-poweroff-diagnostic` is retained and can be reactivated.
+The test USB forwarding setting resets on reboot. The working SAE AP and
+USB sharing were left active at the end of testing.
+
+Build logs are `linux-kernel/wifi-regulatory-build.log`,
+`linux-kernel/wifi-channel-notify-build.log` and
+`linux-kernel/wifi-sae-rsnxe-build.log`. Captured test results are in
+`linux-kernel/hotspot-5g-sae-results.tar.gz` and on the phone under
+`/home/alarm/hotspot-5g-test/`.
 
 ## Artifacts and recovery
 

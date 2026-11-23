@@ -1,5 +1,5 @@
 #!/bin/sh
-# Start an existing AP profile and apply the gen4m WPA2-PSK compatibility setting.
+# Start an existing WPA2 or WPA3 AP profile with the gen4m settings.
 set -eu
 profile=${1:-Begonia-Hotspot-Test}
 iface=ap0
@@ -12,8 +12,26 @@ if [ "$(nmcli -g 802-11-wireless.mode connection show "$profile")" != ap ] ||
     echo "Profile must be an access point on $iface." >&2
     exit 1
 fi
-nmcli connection modify "$profile" wifi-sec.key-mgmt wpa-psk \
-    wifi-sec.proto rsn wifi-sec.pairwise ccmp wifi-sec.group ccmp wifi-sec.pmf disable
+security=$(nmcli -g 802-11-wireless-security.key-mgmt connection show "$profile")
+case "$security" in
+    wpa-psk) pmf=disable; key_mgmt=WPA-PSK ;;
+    sae) pmf=required; key_mgmt=SAE ;;
+    *) echo "Unsupported hotspot security: $security" >&2; exit 1 ;;
+esac
+# Keep station interfaces unmanaged during 5 GHz tests: automatic reconnects
+# can silently move the AP onto the station's channel with this firmware.
+band=$(nmcli -g 802-11-wireless.band connection show "$profile")
+if [ "$band" = a ]; then
+    for station in wlan0 wlan1; do
+        managed=$(nmcli -g GENERAL.NM-MANAGED device show "$station" 2>/dev/null || true)
+        if [ "$managed" = yes ]; then
+            echo "Run 'nmcli device set $station managed no' before starting a 5 GHz AP." >&2
+            exit 1
+        fi
+    done
+fi
+nmcli connection modify "$profile" wifi-sec.proto rsn \
+    wifi-sec.pairwise ccmp wifi-sec.group ccmp wifi-sec.pmf "$pmf"
 if [ "$(nmcli -g GENERAL.CONNECTION device show "$iface")" != "$profile" ]; then
     nmcli --wait 30 connection up "$profile" ifname "$iface"
 fi
@@ -28,11 +46,43 @@ wpa_ok() {
         exit 1
     fi
 }
+# Advertise both SAE password-exchange methods. The RSNXE driver fix is
+# required for H2E: beacons and the EAPOL handshake must carry matching data.
+restart=no
+if [ "$security" = sae ] && [ "$(wpa_cli -i "$iface" get sae_pwe)" != 2 ]; then
+    wpa_ok set sae_pwe 2
+    # Apply the AP setting after activation as well as on an existing AP.
+    restart=yes
+fi
+case "$security" in
+    sae) mfp=2 ;;
+    wpa-psk) mfp=0 ;;
+esac
+if [ "$(wpa_cli -i "$iface" get_network "$network_id" ieee80211w)" != "$mfp" ]; then
+    wpa_ok set_network "$network_id" ieee80211w "$mfp"
+    restart=yes
+fi
 # NetworkManager also offers PSK-SHA256; this vendor driver rejects that AKM
 # with association status 43. Apply PSK-only to the running supplicant AP.
-if [ "$(wpa_cli -i "$iface" get_network "$network_id" key_mgmt)" != WPA-PSK ]; then
-    wpa_ok set_network "$network_id" key_mgmt WPA-PSK
+if [ "$(wpa_cli -i "$iface" get_network "$network_id" key_mgmt)" != "$key_mgmt" ]; then
+    wpa_ok set_network "$network_id" key_mgmt "$key_mgmt"
+    restart=yes
+fi
+if [ "$restart" = yes ]; then
     wpa_ok disable_network "$network_id"
     wpa_ok enable_network "$network_id"
+fi
+if [ "$band" = a ]; then
+    # Activation is asynchronous after ENABLE_NETWORK. Check the real AP
+    # frequency rather than trusting the saved NetworkManager band setting.
+    for attempt in 1 2 3 4 5; do
+        frequency=$(wpa_cli -i "$iface" status | sed -n 's/^freq=//p')
+        case "$frequency" in 5[0-9][0-9][0-9]) break ;; esac
+        sleep 1
+    done
+    case "$frequency" in
+        5[0-9][0-9][0-9]) ;;
+        *) echo "AP did not start on 5 GHz (frequency: $frequency)." >&2; exit 1 ;;
+    esac
 fi
 wpa_cli -i "$iface" status

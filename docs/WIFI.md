@@ -50,8 +50,9 @@ in this repository.
 | Saved connection | NetworkManager profile `Guest1`, autoconnect enabled |
 | System state | No failed system services; `begonia-aux` ALSA card present |
 
-This verifies basic client networking. A 5 GHz association, access-point mode,
-suspend/resume, sustained throughput and Bluetooth HCI operation were not tested.
+This verifies basic client networking. A 5 GHz association, hotspot client
+connectivity, suspend/resume, sustained throughput and Bluetooth HCI operation
+were not tested in that run.
 BTIF is the shared control transport; installing it does not provide a BlueZ
 Bluetooth controller.
 
@@ -90,6 +91,87 @@ The local installation bundle includes this correction. Its boot image is
 unchanged: the Wi-Fi module loads from the root filesystem after boot.
 Detailed results are in `linux-kernel/wifi-irq-log-fix-results.tar.gz` and
 the build output is in `linux-kernel/wifi-irq-logging-build.log`.
+
+## Hotspot test preparation
+
+On 2026-11-23, a temporary NetworkManager profile `Begonia-Hotspot-Test`
+started `Begonia-Test` on `ap0` in AP mode, WPA2, 2.4 GHz, channel 3. The
+`wlan0` client remained connected to Guest1 on the same channel and received
+3/3 Internet ping replies while the AP was active. `wpa_supplicant` reported
+`AP-ENABLED`. DHCP/DNS listen on `10.42.0.1`, with leases from `10.42.0.10`
+to `10.42.0.254`. Both interfaces have IPv4 forwarding enabled, and the
+`nm-shared-ap0` nftables table contains forwarding and masquerading rules.
+The profile has autoconnect disabled. Client connectivity was subsequently
+verified after the security correction described below.
+
+Before that successful attempt, `iw reg set ES` exposed a driver deadlock:
+the regulatory notifier called `wiphy_apply_custom_regulatory()`, which
+reacquired RTNL while the regulatory worker already held it. NetworkManager
+then blocked waiting for RTNL during hotspot preparation. The phone was
+rebooted to recover, and the 2.4 GHz test uses its existing channel rules.
+The runtime country-setting bug remains unresolved; 5 GHz hotspot operation
+is not verified. Stack traces and activation logs are saved on the phone
+under `/home/alarm/hotspot-test/`.
+
+### Client connection failure and correction
+
+The user's other phone subsequently failed to join, first stalling at
+"Obtaining IP address". No station or DHCP lease appeared on the Arch phone;
+`ap0` had zero RX packets, and a DHCP/EAPOL capture on that interface received
+no packets. Disconnecting Guest1 to isolate AP operation did not resolve the
+reported failure. The profile was also changed to WPA2/CCMP with PMF disabled.
+These results do not establish working hotspot client connectivity.
+
+Inspection found that the port removed `.mgmt_frame_register` for kernels
+5.8 and newer without implementing `.update_mgmt_frame_registrations`.
+`begonia-wifi-mgmt-registration.patch` restores that callback, translating the
+kernel's per-interface subtype bitmap into the vendor's probe, action,
+authentication and association filter updates. It includes unregister updates
+and avoids invoking the AP-only filters on station interfaces.
+
+The module compiled, passed dependency/symbol checks, and was installed with
+SHA-256 `78989eafaa823f7c81dfd5691386e8114bc26deb1245fe15e6b4390bea34b97b`.
+The preceding module is backed up on the phone as
+`/home/alarm/wifi-install-backup/wlan_gen4m-before-mgmt-fix.ko`.
+The user reported that the battery was depleted when the phone did not return
+after the subsequent reboot. After charging, Arch booted with this module and
+the new callback was present in the running kernel. Driver tracing confirmed
+management-filter updates and reception of the test phone's authentication
+and association requests. The callback alone did not resolve the failure:
+the driver rejected association with status 43 (`INVALID_AKMP`).
+
+NetworkManager configured the supplicant AP with both `WPA-PSK` and
+`WPA-PSK-SHA256`, even with PMF disabled. Restricting the running AP to
+`WPA-PSK`, then restarting that supplicant network, resolved the rejection.
+The test phone associated with status 0, completed WPA2/CCMP authentication,
+and obtained `10.42.0.46` by DHCP. The Arch phone received 3/3 ping replies
+from the client, and the user confirmed Internet access from the other phone
+while `wlan0` remained connected to Guest1. Full PSK-SHA256 support is not
+verified; the working configuration explicitly uses WPA2-PSK only.
+
+The installed `begonia-hotspot-test` helper starts the saved NetworkManager
+AP profile and applies that compatibility setting to the current supplicant
+network. It avoids restarting an already compatible AP. The helper was run
+again with the client connected, and the client remained authorized with its
+DHCP lease intact. To restart this test hotspot after boot:
+
+```sh
+sudo begonia-hotspot-test
+```
+
+To stop it:
+
+```sh
+sudo nmcli connection down Begonia-Hotspot-Test
+```
+
+The helper requires an existing AP profile on `ap0`; it does not create or
+store credentials in the repository. The image installs the helper along with
+`iw`, `dnsmasq` and `wpa_supplicant`. The updated local installation bundle
+contains the tested module and helper. Diagnostic logging was disabled after
+the test. Build output is `linux-kernel/wifi-mgmt-registration-build.log`;
+DHCP, authorization and helper results are saved in
+`linux-kernel/hotspot-working-results.tar.gz`.
 
 ## Artifacts and recovery
 

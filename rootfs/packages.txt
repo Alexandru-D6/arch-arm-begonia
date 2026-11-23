@@ -14,6 +14,9 @@ ca-certificates
 # Network
 networkmanager
 iwd
+wpa_supplicant
+iw
+dnsmasq
 dhcpcd
 
 # System tools

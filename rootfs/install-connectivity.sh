@@ -16,6 +16,7 @@ tar -xzf "$archive" -C "$work" "firmware-$commit/mediatek"
 # The vendor driver requests bare filenames, so these belong in firmware/.
 install -Dm644 "$work/firmware-$commit/mediatek/"*.zst -t "$rootfs/usr/lib/firmware/"
 install -Dm755 "$script_dir/connectivity/begonia-wifi" "$rootfs/usr/local/sbin/begonia-wifi"
+install -Dm755 "$script_dir/connectivity/begonia-hotspot-test" "$rootfs/usr/local/sbin/begonia-hotspot-test"
 install -Dm644 "$script_dir/connectivity/begonia-wifi.service" "$rootfs/usr/lib/systemd/system/begonia-wifi.service"
 mkdir -p "$rootfs/etc/systemd/system/multi-user.target.wants"
 ln -sfn /usr/lib/systemd/system/begonia-wifi.service "$rootfs/etc/systemd/system/multi-user.target.wants/begonia-wifi.service"

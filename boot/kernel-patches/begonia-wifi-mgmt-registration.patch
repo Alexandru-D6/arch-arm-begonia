@@ -1,0 +1,72 @@
+--- a/drivers/misc/mediatek/connectivity/wlan/gen4m/os/linux/gl_init.c
++++ b/drivers/misc/mediatek/connectivity/wlan/gen4m/os/linux/gl_init.c
+@@ -505,9 +505,9 @@
+ 	.cancel_remain_on_channel = mtk_cfg_cancel_remain_on_channel,
+ 	.mgmt_tx = mtk_cfg_mgmt_tx,
+ 	/* .mgmt_tx_cancel_wait        = mtk_cfg80211_mgmt_tx_cancel_wait, */
+-	/* mgmt_frame_register was removed from cfg80211_ops in 5.8 (replaced by
+-	 * update_mgmt_frame_registrations, which fullmac may leave unset). */
+-#if KERNEL_VERSION(5, 8, 0) > CFG80211_VERSION_CODE
++#if KERNEL_VERSION(5, 8, 0) <= CFG80211_VERSION_CODE
++	.update_mgmt_frame_registrations = mtk_cfg_update_mgmt_frame_registrations,
++#else
+ 	.mgmt_frame_register = mtk_cfg_mgmt_frame_register,
+ #endif
+ 
+--- a/drivers/misc/mediatek/connectivity/wlan/gen4m/os/linux/gl_cfg80211.c
++++ b/drivers/misc/mediatek/connectivity/wlan/gen4m/os/linux/gl_cfg80211.c
+@@ -7313,6 +7313,40 @@
+ 	}
+ }
+ 
++#if KERNEL_VERSION(5, 8, 0) <= CFG80211_VERSION_CODE
++void mtk_cfg_update_mgmt_frame_registrations(struct wiphy *wiphy,
++		struct wireless_dev *wdev, struct mgmt_frame_regs *upd)
++{
++	struct GLUE_INFO *glue = wiphy_priv(wiphy);
++	static const u16 frame_types[] = {
++		IEEE80211_STYPE_PROBE_REQ, IEEE80211_STYPE_ACTION,
++#if CFG_SUPPORT_SOFTAP_WPA3
++		IEEE80211_STYPE_AUTH, IEEE80211_STYPE_ASSOC_REQ,
++#endif
++	};
++	unsigned int i;
++	bool is_p2p;
++
++	if (!wdev || !wdev->netdev || !glue || !glue->u4ReadyFlag)
++		return;
++
++	is_p2p = mtk_IsP2PNetDevice(glue, wdev->netdev) > 0;
++	/* cfg80211 supplies a complete per-interface subtype bitmap. Translate
++	 * it to the vendor's filter updates, including removals. AP authentication
++	 * and association frames must reach userspace when registered there.
++	 */
++	for (i = 0; i < ARRAY_SIZE(frame_types); i++) {
++		u16 type = frame_types[i];
++
++		if (!is_p2p && type != IEEE80211_STYPE_PROBE_REQ &&
++		    type != IEEE80211_STYPE_ACTION)
++			continue;
++		mtk_cfg_mgmt_frame_register(wiphy, wdev, type,
++			!!(upd->interface_stypes & BIT(type >> 4)));
++	}
++}
++#endif
++
+ #ifdef CONFIG_NL80211_TESTMODE
+ #if KERNEL_VERSION(3, 12, 0) <= CFG80211_VERSION_CODE
+ int mtk_cfg_testmode_cmd(struct wiphy *wiphy,
+--- a/drivers/misc/mediatek/connectivity/wlan/gen4m/os/linux/include/gl_cfg80211.h
++++ b/drivers/misc/mediatek/connectivity/wlan/gen4m/os/linux/include/gl_cfg80211.h
+@@ -714,6 +714,11 @@
+ 		    bool dont_wait_for_ack,
+ 		    u64 *cookie);
+ #endif
++#if KERNEL_VERSION(5, 8, 0) <= CFG80211_VERSION_CODE
++void mtk_cfg_update_mgmt_frame_registrations(struct wiphy *wiphy,
++		struct wireless_dev *wdev, struct mgmt_frame_regs *upd);
++#endif
++
+ void mtk_cfg_mgmt_frame_register(struct wiphy *wiphy,
+ 				 struct wireless_dev *wdev,
+ 				 u16 frame_type, bool reg);

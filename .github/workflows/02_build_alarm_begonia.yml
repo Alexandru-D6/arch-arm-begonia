@@ -36,7 +36,7 @@ jobs:
           python3 -m unittest discover -s tests -v
           bash -n boot/apply-kernel-audio.sh rootfs/install-audio.sh scripts/test-mic-aux.sh
           bash -n boot/apply-kernel-connectivity.sh boot/configure-kernel.sh rootfs/install-connectivity.sh
-          sh -n rootfs/connectivity/begonia-wifi
+          sh -n rootfs/connectivity/begonia-wifi rootfs/connectivity/begonia-hotspot-test
           sh -n initramfs/charge-only.sh
 
       - name: Install deps
@@ -209,7 +209,7 @@ jobs:
             pacman -Syu --noconfirm --needed \
               busybox \
               sudo vim nano git openssh rsync curl wget \
-              networkmanager iwd wpa_supplicant \
+              networkmanager iwd wpa_supplicant iw dnsmasq \
               htop tmux \
               alsa-utils alsa-ucm-conf \
               pipewire pipewire-audio pipewire-alsa pipewire-pulse wireplumber python 2>&1

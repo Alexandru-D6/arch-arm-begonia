@@ -1,0 +1,38 @@
+#!/bin/sh
+# Start an existing AP profile and apply the gen4m WPA2-PSK compatibility setting.
+set -eu
+profile=${1:-Begonia-Hotspot-Test}
+iface=ap0
+if [ "$(id -u)" != 0 ]; then
+    echo 'Run this command as root.' >&2
+    exit 1
+fi
+if [ "$(nmcli -g 802-11-wireless.mode connection show "$profile")" != ap ] ||
+   [ "$(nmcli -g connection.interface-name connection show "$profile")" != "$iface" ]; then
+    echo "Profile must be an access point on $iface." >&2
+    exit 1
+fi
+nmcli connection modify "$profile" wifi-sec.key-mgmt wpa-psk \
+    wifi-sec.proto rsn wifi-sec.pairwise ccmp wifi-sec.group ccmp wifi-sec.pmf disable
+if [ "$(nmcli -g GENERAL.CONNECTION device show "$iface")" != "$profile" ]; then
+    nmcli --wait 30 connection up "$profile" ifname "$iface"
+fi
+network_id=$(wpa_cli -i "$iface" status | sed -n 's/^id=//p')
+case "$network_id" in
+    ''|*[!0-9]*) echo 'No active supplicant AP network found.' >&2; exit 1 ;;
+esac
+wpa_ok() {
+    result=$(wpa_cli -i "$iface" "$@")
+    if [ "$result" != OK ]; then
+        echo "Supplicant command failed: $result" >&2
+        exit 1
+    fi
+}
+# NetworkManager also offers PSK-SHA256; this vendor driver rejects that AKM
+# with association status 43. Apply PSK-only to the running supplicant AP.
+if [ "$(wpa_cli -i "$iface" get_network "$network_id" key_mgmt)" != WPA-PSK ]; then
+    wpa_ok set_network "$network_id" key_mgmt WPA-PSK
+    wpa_ok disable_network "$network_id"
+    wpa_ok enable_network "$network_id"
+fi
+wpa_cli -i "$iface" status

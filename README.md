@@ -165,7 +165,7 @@ tailscale up --accept-routes
 | **Pantalla** | ✅ | Framebuffer console |
 | **Touchscreen** | ✅ | Input multitouch |
 | **GPU** | ✅ | Panfrost (Mali-G76) |
-| **WiFi interno** | ❌ | MT7663 — sin driver mainline |
+| **WiFi interno** | ✅ | MT6785/WMT + `wlan_gen4m`: conexión WPA2 a Guest1, DHCP, DNS e Internet verificados. [Instalación y resultados](docs/WIFI.md) |
 | **Bluetooth** | ❌ | MT7663 — sin driver mainline |
 | **Audio** | ✅ | AUX estéreo + micrófono interno verificados con ALSA/PipeWire. Altavoz interno automático al desconectar AUX, probado en el teléfono. Pendiente de validación prolongada en coche. [Resultados](docs/AUDIO_TEST_RESULTS.md) · [Prueba de 5 segundos](docs/AUDIO.md) |
 | **Cámara** | ❌ | En desarrollo |

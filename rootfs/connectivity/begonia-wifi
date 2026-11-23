@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+modprobe mtk-vendor-btif
+modprobe wmt_drv
+modprobe wlan_gen4m
+test -c /dev/wmtWifi
+printf 1 > /dev/wmtWifi
+test -d /sys/class/net/wlan0

@@ -15,13 +15,16 @@ def archive_files(archive):
 def refresh(ramdisk, installed, output, work):
     release = installed.name
     members = archive_files(ramdisk)
-    roots = [root / release for root in (Path("usr/lib/modules"), Path("lib/modules"))
-             if any((root / release) in path.parents for path in members)]
+    prefixes = (Path("usr/lib/modules"), Path("lib/modules"))
+    roots = sorted({prefix / path.relative_to(prefix).parts[0]
+                    for prefix in prefixes for path in members
+                    if prefix in path.parents and len(path.relative_to(prefix).parts) > 1})
     if len(roots) != 1:
-        raise SystemExit(f"pmOS ramdisk must contain the module tree for {release}")
-    root = roots[0]
-    modules = [path.relative_to(root) for path in members
-               if root in path.parents and path.name.endswith((".ko", ".ko.gz", ".ko.xz", ".ko.zst"))]
+        raise SystemExit("pmOS ramdisk must contain exactly one kernel module tree")
+    original_root = roots[0]
+    root = original_root.parent / release
+    modules = [path.relative_to(original_root) for path in members
+               if original_root in path.parents and path.name.endswith((".ko", ".ko.gz", ".ko.xz", ".ko.zst"))]
     if not modules:
         raise SystemExit(f"No early-boot modules in {root}")
 
@@ -66,8 +69,8 @@ def refresh(ramdisk, installed, output, work):
     # ownership and symlinks without needing root privileges.
     keep = work / "keep.tar"
     new = work / "modules.tar"
-    subprocess.run(["bsdtar", "-cf", keep, "--exclude", str(root),
-                    "--exclude", f"./{root}", f"@{ramdisk}"], check=True)
+    subprocess.run(["bsdtar", "-cf", keep, "--exclude", str(original_root),
+                    "--exclude", f"./{original_root}", f"@{ramdisk}"], check=True)
     subprocess.run(["bsdtar", "-cf", new, "--uid", "0", "--gid", "0",
                     "-C", stage, root], check=True)
     subprocess.run(["bsdtar", "--format=newc", "-czf", output,

@@ -1,0 +1,13 @@
+[Unit]
+Description=Begonia internal MediaTek Wi-Fi
+After=systemd-modules-load.service
+Before=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/begonia-wifi
+RemainAfterExit=yes
+TimeoutStartSec=90
+
+[Install]
+WantedBy=multi-user.target

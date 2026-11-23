@@ -3,6 +3,7 @@
 set -euo pipefail
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 bash "$script_dir/apply-kernel-audio.sh"
+bash "$script_dir/apply-kernel-connectivity.sh"
 # Start the panel at its existing supported maximum instead of 800.
 dts=arch/arm64/boot/dts/mediatek/mt6785-xiaomi-begonia.dts
 sed -i 's/default-brightness = <800>;/default-brightness = <1879>;/' "$dts"
@@ -10,6 +11,9 @@ grep -q 'default-brightness = <1879>;' "$dts"
 grep -q 'max-brightness = <1879>;' "$dts"
 
 scripts/config --enable MEMCG_V1 --enable CPUSETS_V1 \
+    --module MTK_WMT_FWPORT --module MTK_WMT_DRV \
+    --module MTK_WMT_FWPORT_BTIF --module MTK_WLAN_GEN4M \
+    --enable CFG80211_WEXT \
     --enable POWER_RESET_MT6359 \
     --module NF_CT_NETLINK --module NF_NAT_FTP --module NF_NAT_TFTP \
     --enable SOUND --enable SND --enable SND_SOC \
@@ -29,6 +33,11 @@ for driver in SND_SOC_MT6785_BEGONIA SND_SOC_MT6359 SND_SOC_MT6359_ACCDET SND_SO
 done
 grep -Fx 'CONFIG_POWER_RESET_MT6359=y' .config
 grep -Fx 'CONFIG_INPUT_REGULATOR_HAPTIC=m' .config
+for driver in MTK_WMT_FWPORT MTK_WMT_DRV MTK_WMT_FWPORT_BTIF MTK_WLAN_GEN4M; do
+    grep -Fx "CONFIG_${driver}=m" .config
+done
+grep -Fx 'CONFIG_CFG80211_WEXT=y' .config
+grep -Fx 'CONFIG_WEXT_CORE=y' .config
 # Keep servicing a boot-enabled watchdog while waiting for Power to start Arch.
 grep -Fx 'CONFIG_WATCHDOG_HANDLE_BOOT_ENABLED=y' .config
 grep -Fx 'CONFIG_WATCHDOG_OPEN_TIMEOUT=0' .config

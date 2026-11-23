@@ -31,10 +31,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check audio test helper
+      - name: Check hardware setup helpers
         run: |
           python3 -m unittest discover -s tests -v
           bash -n boot/apply-kernel-audio.sh rootfs/install-audio.sh scripts/test-mic-aux.sh
+          bash -n boot/apply-kernel-connectivity.sh boot/configure-kernel.sh rootfs/install-connectivity.sh
+          sh -n rootfs/connectivity/begonia-wifi
           sh -n initramfs/charge-only.sh
 
       - name: Install deps
@@ -143,7 +145,13 @@ jobs:
           for driver in snd-soc-mt6785-begonia snd-soc-mt6359 mt6359-accdet snd-soc-begonia-tfa9874 i2c-gpio; do
             modinfo -b mnt -k "$KVER" "$driver" > /dev/null
           done
+          for driver in mtk-vendor-btif wmt_drv wlan_gen4m; do
+            modinfo -b mnt -k "$KVER" "$driver" > /dev/null
+          done
           echo "KVER=$KVER" >> "$GITHUB_ENV"
+
+      - name: Install internal MediaTek Wi-Fi firmware and boot service
+        run: sudo bash rootfs/install-connectivity.sh "$GITHUB_WORKSPACE/mnt"
 
       - name: Pack custom boot.img with new kernel
         run: |

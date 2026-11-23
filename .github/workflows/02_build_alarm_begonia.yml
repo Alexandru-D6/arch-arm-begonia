@@ -35,6 +35,7 @@ jobs:
         run: |
           python3 -m unittest discover -s tests -v
           bash -n boot/apply-kernel-audio.sh rootfs/install-audio.sh scripts/test-mic-aux.sh
+          sh -n initramfs/charge-only.sh
 
       - name: Install deps
         run: |
@@ -148,6 +149,7 @@ jobs:
         run: |
           python3 scripts/repack-bootimg.py pmos-base/boot.img - - boot-begonia-arch.img \
             --modules-dir "mnt/usr/lib/modules/$KVER" \
+            --charge-only \
             --kernel linux-kernel/arch/arm64/boot/Image.gz \
             --dtb linux-kernel/arch/arm64/boot/dts/mediatek/mt6785-xiaomi-begonia.dtb
 
@@ -271,7 +273,8 @@ jobs:
             | 🐉 **Waydroid** | CGroups v1 habilitado → Android 13 (LineageOS) bootea dentro del contenedor |
             | 🔊 **Audio** | AUX + altavoz interno automático + micrófono interno, UCM2 y PipeWire; pruebas básicas en begonia, validación prolongada pendiente |
             | 🔌 **USB** | RTL8152 (Ethernet USB) + módems por puerto serie |
-            | ⏻ **Apagado** | MT6359 PWRHOLD: arranque normal tras apagar, sin mantener pulsado 20 segundos; USB puede provocar arranque automático |
+            | ⏻ **Apagado** | MT6359 PWRHOLD: arranque normal tras apagar, sin mantener pulsado 20 segundos |
+            | 🔋 **Carga sin arrancar Arch** | USB mantiene la pantalla apagada; Power inicia Arch con confirmación por vibración |
             | 📦 **DM_VERITY** | Integridad de bloques para imágenes Android |
             | ⚡ **ZSWAP** | Compresión de swap en RAM (mejora rendimiento) |
             | 📡 **Netfilter** | Conntrack netlink + helpers NAT para contenedores |

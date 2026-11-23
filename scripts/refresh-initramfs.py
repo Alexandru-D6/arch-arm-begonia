@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Refresh pmOS early-boot modules and include begonia's USB dependencies."""
+"""Refresh pmOS early-boot modules, including begonia USB and haptic support."""
 import argparse
 from pathlib import Path
 import shutil
@@ -41,10 +41,12 @@ def refresh(ramdisk, installed, output, work):
     # The USB controller depends on the MT6360 VBUS regulator and Type-C
     # role switch. Without these modules it remains deferred in the initramfs,
     # so neither the network gadget nor the debug shell can appear over USB.
-    for name in ("mt6360-regulator", "tcpci_mt6360"):
+    # The charging-only stage acknowledges Power through the vibrator before
+    # the rootfs is mounted. Keep its driver in this early module tree too.
+    for name in ("mt6360-regulator", "tcpci_mt6360", "regulator-haptic"):
         if name not in builtins:
             if name not in by_name:
-                raise SystemExit(f"Missing begonia USB module: {name}")
+                raise SystemExit(f"Missing begonia early-boot module: {name}")
             needed.add(by_name[name])
     # modules.dep lists the complete load order for each module.
     selected = needed.union(*(deps[path] for path in needed))

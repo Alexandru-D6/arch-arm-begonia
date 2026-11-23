@@ -29,6 +29,8 @@ def main():
     parser.add_argument("--dtb")
     parser.add_argument("--modules-dir", type=Path, help="installed module tree for the new kernel release")
     parser.add_argument("--extra-cmdline", default="")
+    parser.add_argument("--charge-only", action="store_true",
+                        help="wait in charging-only mode on USB/charger starts")
     args = parser.parse_args()
 
     with tempfile.TemporaryDirectory(dir=args.output.parent) as tmp:
@@ -56,6 +58,12 @@ def main():
             subprocess.run([sys.executable, Path(__file__).with_name("refresh-initramfs.py"),
                             fields["--ramdisk"], args.modules_dir, refreshed], check=True)
             fields["--ramdisk"] = str(refreshed)
+
+        if args.charge_only:
+            charging = work / "initramfs-charge-only.gz"
+            subprocess.run([sys.executable, Path(__file__).with_name("add-charge-only.py"),
+                            fields["--ramdisk"], charging], check=True)
+            fields["--ramdisk"] = str(charging)
 
         components = {"--kernel", "--ramdisk", "--dtb", "--second", "--recovery_dtbo"}
         for key in components.intersection(fields):

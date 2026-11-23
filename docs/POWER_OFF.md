@@ -74,7 +74,9 @@ The final confirmed boot ID is `ceefbb31-3ff6-42e6-a547-2d44205114f8`, running
 
 USB power can start the phone automatically after shutdown. This was observed
 with the temporary fix and confirmed by the bootloader's `usb` boot reason.
-Test whether the phone stays off and starts normally with USB disconnected.
+The subsequent [charging-only stage](CHARGE_ONLY.md) now honors that bootloader
+request and waits with the screen off until Power is held and released, rather
+than starting Arch automatically.
 
 ## Artifacts and recovery
 

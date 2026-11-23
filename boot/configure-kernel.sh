@@ -15,6 +15,7 @@ scripts/config --enable MEMCG_V1 --enable CPUSETS_V1 \
     --enable SOUND --enable SND --enable SND_SOC \
     --module SND_SOC_MT6785_BEGONIA --module SND_SOC_BEGONIA_TFA9874 \
     --module I2C_GPIO \
+    --module INPUT_REGULATOR_HAPTIC \
     --module MTK_ADSP_MBOX --module MTK_SCP \
     --enable USB_USBNET --module USB_RTL8152 --module USB_NET_AX88179_178A \
     --module USB_NET_SMSC95XX --module USB_SERIAL_OPTION \
@@ -27,3 +28,7 @@ for driver in SND_SOC_MT6785_BEGONIA SND_SOC_MT6359 SND_SOC_MT6359_ACCDET SND_SO
     grep -Fx "CONFIG_${driver}=m" .config
 done
 grep -Fx 'CONFIG_POWER_RESET_MT6359=y' .config
+grep -Fx 'CONFIG_INPUT_REGULATOR_HAPTIC=m' .config
+# Keep servicing a boot-enabled watchdog while waiting for Power to start Arch.
+grep -Fx 'CONFIG_WATCHDOG_HANDLE_BOOT_ENABLED=y' .config
+grep -Fx 'CONFIG_WATCHDOG_OPEN_TIMEOUT=0' .config

@@ -271,6 +271,7 @@ jobs:
             | 🐉 **Waydroid** | CGroups v1 habilitado → Android 13 (LineageOS) bootea dentro del contenedor |
             | 🔊 **Audio** | AUX + altavoz interno automático + micrófono interno, UCM2 y PipeWire; pruebas básicas en begonia, validación prolongada pendiente |
             | 🔌 **USB** | RTL8152 (Ethernet USB) + módems por puerto serie |
+            | ⏻ **Apagado** | MT6359 PWRHOLD: arranque normal tras apagar, sin mantener pulsado 20 segundos; USB puede provocar arranque automático |
             | 📦 **DM_VERITY** | Integridad de bloques para imágenes Android |
             | ⚡ **ZSWAP** | Compresión de swap en RAM (mejora rendimiento) |
             | 📡 **Netfilter** | Conntrack netlink + helpers NAT para contenedores |

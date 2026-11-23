@@ -10,6 +10,7 @@ grep -q 'default-brightness = <1879>;' "$dts"
 grep -q 'max-brightness = <1879>;' "$dts"
 
 scripts/config --enable MEMCG_V1 --enable CPUSETS_V1 \
+    --enable POWER_RESET_MT6359 \
     --module NF_CT_NETLINK --module NF_NAT_FTP --module NF_NAT_TFTP \
     --enable SOUND --enable SND --enable SND_SOC \
     --module SND_SOC_MT6785_BEGONIA --module SND_SOC_BEGONIA_TFA9874 \
@@ -25,3 +26,4 @@ done
 for driver in SND_SOC_MT6785_BEGONIA SND_SOC_MT6359 SND_SOC_MT6359_ACCDET SND_SOC_BEGONIA_TFA9874 I2C_GPIO; do
     grep -Fx "CONFIG_${driver}=m" .config
 done
+grep -Fx 'CONFIG_POWER_RESET_MT6359=y' .config

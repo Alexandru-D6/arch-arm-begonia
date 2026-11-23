@@ -154,6 +154,7 @@ tailscale up --accept-routes
 | Componente | Estado | Notas |
 |---|---|---|
 | **Booteo** | ✅ | Initramfs encuentra rootfs |
+| **Apagado** | ✅ | MT6359 PWRHOLD: probado el arranque con pulsación normal de 2–3 s tras apagar sin USB. Con USB puede arrancar automáticamente. [Detalles](docs/POWER_OFF.md) |
 | **Kernel** | ✅ | Mainline 6.16.4+ |
 | **RAM** | ✅ | 6 GB completos |
 | **Almacenamiento** | ✅ | Partición userdata (64/128 GB) |

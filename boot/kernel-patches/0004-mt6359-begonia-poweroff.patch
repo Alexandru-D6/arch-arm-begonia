@@ -1,0 +1,71 @@
+--- a/drivers/power/reset/Kconfig
++++ b/drivers/power/reset/Kconfig
+@@ -187,6 +187,14 @@
+ 
+ 	  Say Y if you have a board where MT6323 could be found.
+ 
++config POWER_RESET_MT6359
++	bool "MediaTek MT6359 power-off driver"
++	depends on MFD_MT6397 && OF
++	help
++	  Clear the MT6359 PMIC power-hold signal on boards whose firmware
++	  does not complete power-off, including Xiaomi Redmi Note 8 Pro.
++	  The board device tree must enable the PMIC power controller.
++
+ config POWER_RESET_QNAP
+ 	bool "QNAP power-off driver"
+ 	depends on OF_GPIO && PLAT_ORION
+--- a/drivers/power/reset/Makefile
++++ b/drivers/power/reset/Makefile
+@@ -15,6 +15,7 @@
+ obj-$(CONFIG_POWER_RESET_LINKSTATION) += linkstation-poweroff.o
+ obj-$(CONFIG_POWER_RESET_MSM) += msm-poweroff.o
+ obj-$(CONFIG_POWER_RESET_MT6323) += mt6323-poweroff.o
++obj-$(CONFIG_POWER_RESET_MT6359) += mt6359-poweroff.o
+ obj-$(CONFIG_POWER_RESET_QCOM_PON) += qcom-pon.o
+ obj-$(CONFIG_POWER_RESET_OCELOT_RESET) += ocelot-reset.o
+ obj-$(CONFIG_POWER_RESET_ODROID_GO_ULTRA_POWEROFF) += odroid-go-ultra-poweroff.o
+--- a/drivers/mfd/mt6397-core.c
++++ b/drivers/mfd/mt6397-core.c
+@@ -228,6 +228,10 @@
+ 
+ static const struct mfd_cell mt6359_devs[] = {
+ 	{
++		.name = "mt6359-pwrc",
++		.of_compatible = "mediatek,mt6359-pwrc",
++	},
++	{
+ 		.name = "mt6359-auxadc",
+ 		.of_compatible = "mediatek,mt6359-auxadc"
+ 	},
+--- a/arch/arm64/boot/dts/mediatek/mt6785-xiaomi-begonia.dts
++++ b/arch/arm64/boot/dts/mediatek/mt6785-xiaomi-begonia.dts
+@@ -632,6 +632,10 @@
+ &pmic {
+ 	interrupts-extended = <&pio 193 IRQ_TYPE_LEVEL_HIGH>;
+ 
++	power-controller {
++		compatible = "mediatek,mt6359-pwrc";
++	};
++
+ 	keys {
+ 		compatible = "mediatek,mt6359-keys";
+ 
+--- a/Documentation/devicetree/bindings/mfd/mediatek,mt6397.yaml
++++ b/Documentation/devicetree/bindings/mfd/mediatek,mt6397.yaml
+@@ -208,11 +208,13 @@
+     description:
+       The power controller which could be found on PMIC is responsible for
+       externally powering off or on the remote MediaTek SoC through the
+-      circuit BBPU (baseband power up).
++      circuit BBPU (baseband power up), or the PWRHOLD signal on MT6359.
+ 
+     properties:
+       compatible:
+-        const: mediatek,mt6323-pwrc
++        enum:
++          - mediatek,mt6323-pwrc
++          - mediatek,mt6359-pwrc
+ 
+       '#power-domain-cells':
+         const: 0

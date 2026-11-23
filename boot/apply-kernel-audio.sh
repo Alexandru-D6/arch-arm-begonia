@@ -11,7 +11,7 @@ while IFS= read -r name; do
     elif patch --batch --silent --dry-run -R -p1 < "$patch_file" >/dev/null 2>&1; then
         echo "Already applied: $name"
     else
-        echo "Cannot apply audio patch $name to this kernel" >&2
+        echo "Cannot apply kernel patch $name to this kernel" >&2
         exit 1
     fi
 done < "$script_dir/kernel-patches/series"

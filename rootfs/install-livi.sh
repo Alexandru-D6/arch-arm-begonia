@@ -62,12 +62,18 @@ cat > "$root/etc/systemd/system/livi-kiosk.service.d/begonia.conf" <<EOF
 [Unit]
 Wants=seatd.service user@$uid.service bluetooth.service avahi-daemon.service begonia-wifi.service begonia-bluetooth.service
 After=user@$uid.service bluetooth.service avahi-daemon.service begonia-wifi.service begonia-bluetooth.service
+StartLimitIntervalSec=0
 
 [Service]
 Environment=HOME=$user_home
 Environment=XDG_RUNTIME_DIR=/run/user/$uid
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus
 Environment=LIBSEAT_BACKEND=seatd
+# tty1 belongs to the kiosk, including after a crash. Keep maintenance on SSH
+# and other VTs rather than bringing the tty1 login prompt back automatically.
+ExecStopPost=
+Restart=on-failure
+RestartSec=5
 EOF
 install -d "$root/etc/security/limits.d"
 printf '%s - rtprio 30\n' "$kiosk_user" > "$root/etc/security/limits.d/99-livi-rtprio.conf"
@@ -75,6 +81,7 @@ install -d -m755 "$root/var/lib/systemd/linger"
 touch "$root/var/lib/systemd/linger/$kiosk_user"
 chroot "$root" systemctl --global enable pipewire.socket pipewire-pulse.socket wireplumber.service
 chroot "$root" systemctl enable seatd.service bluetooth.service avahi-daemon.service livi-kiosk.service
+chroot "$root" systemctl mask getty@tty1.service
 chroot "$root" systemctl set-default multi-user.target
 
 install -d "$root/usr/share/doc/livi"

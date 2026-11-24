@@ -39,8 +39,10 @@ requires, `alarm` can launch its extracted
 `~/.config/LIVI/driver/livi-helperd` as root without a password. This is a trusted
 maintenance/kiosk account, not a restricted application sandbox.
 
-No shell autologin is added. LIVI owns tty1 while running; quitting it restores
-the regular login prompt. Settings and identities remain in
+No shell autologin is added. The tty1 getty is masked so the boot screen belongs
+to LIVI, and the kiosk restarts after a failure. Quitting LIVI leaves tty1 without
+a login prompt; SSH and other VTs remain available for maintenance.
+Settings and identities remain in
 `/home/alarm/.config/LIVI`, and BlueZ pairing state remains in `/var/lib/bluetooth`.
 Rerunning the installer preserves these files. Reflashing userdata replaces them.
 
@@ -85,13 +87,42 @@ sudo systemctl stop livi-kiosk
 sudo systemctl start livi-kiosk
 # Restore console-only boot:
 sudo systemctl disable --now livi-kiosk
+sudo systemctl unmask getty@tty1
+sudo systemctl start getty@tty1
 ```
 
 Host checks cover image staging, checksum rejection, persistent-state preservation
 and service setup. The ARM64 release asset's checksum was also verified directly.
-A full image build and handset boot/projection test are still required; this
-integration does not qualify wireless AP handover, SCO calls, rotation or video
-performance.
+
+### Handset boot test — 2026-11-24
+
+Installed with this script on the connected begonia running
+`6.16.4-begonia-wifi`, then rebooted through `systemctl reboot`. The boot ID
+changed from `0229bc46-11e8-4abd-807a-70a04c619d91` to
+`54329b2d-e9f0-4f24-885f-891ed4f6033b`.
+
+| Check after reboot | Result |
+|---|---|
+| Automatic startup | `livi-kiosk` enabled, active/running at 13.68 seconds after boot, before the maintenance SSH login |
+| Terminal replacement | `getty@tty1` masked and inactive; active VT is tty1 |
+| UI | Core logged `UI started` and `LIVI connected`; compositor mapped `dev.f-io.livi` to the main screen |
+| Display | DSI-1, 1080×2340 at 60 Hz; one UI surface scanned out directly |
+| Renderer | Mali-G76 MC4 (Panfrost), Mesa 26.3.1 |
+| Audio services | PipeWire, pipewire-pulse and WirePlumber active |
+| Stability at inspection | `NRestarts=0`, `ExecMainStatus=0` |
+| Configuration validation | `systemd-analyze verify` passed on the handset; 32 host tests passed |
+
+Local evidence is in `release/livi-20261124/before-reboot.txt` and
+`release/livi-20261124/after-reboot.txt` (ignored build/test artifacts).
+The test used USB Internet sharing for dependency installation and restored the
+phone's previous resolver and mirror configuration before reboot. The custom
+kernel was preserved; the unrelated generic `linux-aarch64` update was skipped.
+
+This verifies automatic kiosk startup on the existing handset installation.
+A complete workflow image build remains untested. Wireless AP handover, SCO
+calls, rotation and video performance are separate acceptance tests. The initial
+core log reported no available video codecs; projection decoding still needs
+investigation before claiming Android Auto playback works.
 
 ## Upstream files
 

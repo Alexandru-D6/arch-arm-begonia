@@ -89,6 +89,9 @@ class LiviInstallTests(unittest.TestCase):
         dropin = (self.root / "etc/systemd/system/livi-kiosk.service.d/begonia.conf").read_text()
         self.assertIn(f"After=user@{os.getuid() or 1000}.service", dropin)
         self.assertIn("Environment=LIBSEAT_BACKEND=seatd", dropin)
+        self.assertIn("ExecStopPost=\n", dropin)
+        self.assertIn("Restart=on-failure\n", dropin)
+        self.assertIn("StartLimitIntervalSec=0\n", dropin)
         self.assertTrue((self.root / "var/lib/systemd/linger/alarm").exists())
         sudoers = self.root / "etc/sudoers.d/99-LIVI-helper"
         self.assertEqual(sudoers.stat().st_mode & 0o777, 0o440)
@@ -101,6 +104,7 @@ class LiviInstallTests(unittest.TestCase):
         self.assertIn(["usermod", "-aG", "audio,video,render,input,seat", "alarm"], calls)
         self.assertIn(["systemctl", "enable", "seatd.service", "bluetooth.service",
                        "avahi-daemon.service", "livi-kiosk.service"], calls)
+        self.assertIn(["systemctl", "mask", "getty@tty1.service"], calls)
 
     def test_invalid_sudoers_does_not_replace_existing_permissions(self):
         sudoers = self.root / "etc/sudoers.d/99-LIVI-helper"

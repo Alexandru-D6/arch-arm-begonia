@@ -260,6 +260,7 @@ jobs:
           sudo bash rootfs/install-livi.sh "$GITHUB_WORKSPACE/mnt" alarm
           test -x mnt/home/alarm/LIVI/LIVI.AppImage
           test -L mnt/etc/systemd/system/multi-user.target.wants/livi-kiosk.service
+          test "$(readlink mnt/etc/systemd/system/getty@tty1.service)" = /dev/null
 
       - name: Cleanup & release
         run: |
@@ -287,7 +288,7 @@ jobs:
 
             | Mejora | Detalle |
             |---|---|
-            | **LIVI** | 10.5.0 ARM64 verificado por SHA-256; kiosk headless en tty1, PipeWire y seatd. Proyección en el teléfono pendiente de validar |
+            | **LIVI** | 10.5.0 ARM64 verificado por SHA-256; sustituye el terminal de tty1. Arranque automático y UI Panfrost probados en el teléfono; proyección pendiente |
             | 🐉 **Waydroid** | CGroups v1 habilitado → Android 13 (LineageOS) bootea dentro del contenedor |
             | 🔊 **Audio** | AUX + altavoz interno automático + micrófono interno, UCM2 y PipeWire; pruebas básicas en begonia, validación prolongada pendiente |
             | 🔌 **USB** | RTL8152 (Ethernet USB) + módems por puerto serie |

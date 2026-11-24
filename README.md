@@ -169,7 +169,7 @@ tailscale up --accept-routes
 | **WiFi interno** | ✅ | MT6785/WMT + `wlan_gen4m`: conexión WPA2 a Guest1, DHCP, DNS e Internet verificados. [Instalación y resultados](docs/WIFI.md) |
 | **Bluetooth** | ✅ básico | HCI sobre WMT/STP/BTIF: BlueZ, emparejamiento y control RFCOMM verificados con AP de 5 GHz activo. Audio SCO y LIVI pendientes. [Detalles](docs/BLUETOOTH.md) |
 | **Audio** | ✅ | AUX estéreo + micrófono interno verificados con ALSA/PipeWire. Altavoz interno automático al desconectar AUX, probado en el teléfono. Pendiente de validación prolongada en coche. [Resultados](docs/AUDIO_TEST_RESULTS.md) · [Prueba de 5 segundos](docs/AUDIO.md) |
-| **LIVI** | Integrado en workflow 02 | Kiosk headless 10.5.0; arranque y proyección en el teléfono pendientes de validar. [Detalles](docs/LIVI.md) |
+| **LIVI** | Arranque verificado | Kiosk headless 10.5.0 inicia tras reiniciar, sustituye el terminal en tty1 y muestra la UI con Panfrost. Proyección pendiente. [Detalles y prueba](docs/LIVI.md) |
 | **Cámara** | ❌ | En desarrollo |
 | **Módem 4G** | ❌ | MT6779 — sin driver mainline |
 | **Batería (FGU)** | ⏳ | En port desde vendor kernel |

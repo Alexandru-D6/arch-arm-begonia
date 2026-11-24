@@ -28,7 +28,7 @@ hardware support.
 | 2. Internal Wi-Fi AP | Basic 5 GHz AP verified | Channel 36 WPA2 and WPA3-SAE client authorization, DHCP and Internet passed on 2026-11-23. Automatic AP startup, SAE reconnection and DHCP passed after one normal reboot on 2026-11-24. Cold-start and Bluetooth coexistence acceptance remain. [Results](docs/WIFI.md) |
 | 3. Internal Bluetooth | HCI bridge implemented and handset-tested | BlueZ enumeration/power, discovery, bonding, SDP and HFP RFCOMM control passed with the 5 GHz AP active. Startup, bond persistence and RFCOMM reconnection passed after reboot. SCO voice, reset/resume and sustained coexistence remain. [Implementation and results](docs/BLUETOOTH.md) |
 | 4. Audio | Implemented; car qualification pending | AUX, internal mic, speaker fallback, replugging and reboot tests passed. Car-volume speech, echo, charging noise and endurance remain. [Results](docs/AUDIO_TEST_RESULTS.md) |
-| 5. LIVI | Installation integrated; handset validation pending | Workflow 02 installs the pinned ARM64 AppImage, kiosk/PAM/udev/helper setup, seatd and PipeWire. Cold boot, wireless handover and projection remain unqualified. [Details](docs/LIVI.md) |
+| 5. LIVI | Installation and reboot startup verified | Workflow 02 installs the pinned ARM64 AppImage, kiosk/PAM/udev/helper setup, seatd and PipeWire. On the handset, LIVI starts automatically on tty1 after reboot and displays its UI through Panfrost. Wireless handover, decoding and projection remain unqualified. [Test results](docs/LIVI.md) |
 
 ## Implementation order
 

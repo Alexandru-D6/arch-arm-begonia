@@ -1,0 +1,25 @@
+#!/bin/sh
+# Preserve one host-assigned address across boots and WMT power cycles.
+set -eu
+umask 077
+directory=${BEGONIA_BLUETOOTH_STATE_DIR:-/etc/bluetooth}
+address_file=$directory/begonia-bdaddr
+mkdir -p "$directory"
+if [ ! -s "$address_file" ]; then
+    temporary=$(mktemp "$directory/.begonia-bdaddr.XXXXXX")
+    trap 'rm -f "$temporary"' EXIT HUP INT TERM
+    suffix=$(od -An -N5 -tx1 /dev/urandom | tr -d ' \n')
+    test "${#suffix}" = 10
+    printf '02%s\n' "$suffix" | sed 's/../&:/g; s/:$//' > "$temporary"
+    mv -n "$temporary" "$address_file"
+fi
+address=$(cat "$address_file")
+if ! printf '%s\n' "$address" | grep -Eq '^([[:xdigit:]]{2}:){5}[[:xdigit:]]{2}$'; then
+    echo "Invalid Bluetooth address in $address_file" >&2
+    exit 1
+fi
+# BTIF ships with extremely verbose per-packet logging enabled.
+if [ -w /sys/bus/platform/drivers/mtk_btif/flag ]; then
+    printf '8 1\n' > /sys/bus/platform/drivers/mtk_btif/flag
+fi
+exec modprobe hci_stp "bdaddr=$address"

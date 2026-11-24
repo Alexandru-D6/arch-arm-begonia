@@ -26,7 +26,7 @@ hardware support.
 | --- | --- | --- |
 | 1. Recoverable build | Partly implemented | Same-tree kernel/DTB/modules, absolute module staging, refreshed ramdisk and verified boot repacking are implemented. Input pinning, flash safeguards and complete handset/recovery acceptance remain. |
 | 2. Internal Wi-Fi AP | Basic 5 GHz AP verified | Channel 36 WPA2 and WPA3-SAE client authorization, DHCP and Internet passed on 2026-11-23. Automatic AP startup, SAE reconnection and DHCP passed after one normal reboot on 2026-11-24. Cold-start and Bluetooth coexistence acceptance remain. [Results](docs/WIFI.md) |
-| 3. Internal Bluetooth | Pending | WMT/BTIF transport is installed; no onboard BlueZ HCI controller is implemented. |
+| 3. Internal Bluetooth | HCI bridge implemented and handset-tested | BlueZ enumeration/power, discovery, bonding, SDP and HFP RFCOMM control passed with the 5 GHz AP active. Startup, bond persistence and RFCOMM reconnection passed after reboot. SCO voice, reset/resume and sustained coexistence remain. [Implementation and results](docs/BLUETOOTH.md) |
 | 4. Audio | Implemented; car qualification pending | AUX, internal mic, speaker fallback, replugging and reboot tests passed. Car-volume speech, echo, charging noise and endurance remain. [Results](docs/AUDIO_TEST_RESULTS.md) |
 | 5. LIVI | Pending | Workflow 02 still builds a console image; no LIVI kiosk profile is installed. |
 
@@ -57,9 +57,11 @@ hardware support.
 
 ### 3. Expose the internal Bluetooth controller to Linux
 
-The reference port reports that the shared WMT/BTIF transport can power the Bluetooth function, but lacks the Host Controller Interface (HCI) driver that BlueZ needs. This is the largest feasibility risk for wireless Android Auto on this kernel. [Begonia Bluetooth bring-up findings](https://github.com/criollojoel10/begonia-pmos-tianma#por-qu%C3%A9-el-bluetooth-interno-no-se-puede)
+The reference port supplied shared WMT/BTIF transport without a Linux HCI driver. This repository now adds `hci_stp`, which registers the onboard controller with BlueZ; enumeration, pairing and RFCOMM control were tested on 2026-11-24. SCO voice and LIVI integration remain unqualified. [Implementation and handset results](docs/BLUETOOTH.md). [Begonia Bluetooth bring-up findings](https://github.com/criollojoel10/begonia-pmos-tianma#por-qu%C3%A9-el-bluetooth-interno-no-se-puede)
 
-- [ ] Trace the stock begonia firmware initialization and Bluetooth packet path. Reuse the port’s shared transport and implement the HCI driver that registers the onboard controller with Linux. Bring up HCI command/event exchange first, followed by ACL data for Classic pairing and RFCOMM. Handle power, reset and resume so restarting Bluetooth preserves the running Wi-Fi AP.
+- [x] Implement the onboard Linux HCI bridge using WMT function power control and STP task 0 over BTIF. HCI commands/events, Classic pairing, ACL/SDP and HFP RFCOMM control passed on the handset; Bluetooth-only unload/reload preserved the 5 GHz AP. Install BlueZ, boot activation and a persistent per-device address. [Driver and results](docs/BLUETOOTH.md)
+- [x] Verify automatic Bluetooth/AP startup, stable address, saved bond and authenticated RFCOMM reconnection after a normal reboot. [Reboot evidence](docs/BLUETOOTH.md#handset-results--2026-11-24)
+- [ ] Qualify shared-reset recovery and suspend/resume, bond reconnection after cold starts and sustained Bluetooth/AP traffic. The driver handles WMT reset notifications, but forced-reset and resume paths are not yet hardware-qualified.
 - [ ] Identify how the controller carries SCO voice data on this board, including any separate PCM route. Capture controller events with `btmon` and verify the hands-free call path once the audio routes and LIVI are integrated. [LIVI Linux Bluetooth helper](https://github.com/f-io/LIVI/blob/v10.5.0/native/crates/livi-helper/src/bluez.rs)
 
 **Pass when** BlueZ enumerates the onboard controller, the source phone bonds and reconnects after reboot, and Bluetooth exchanges data while the Wi-Fi AP carries traffic. Verify the HCI device’s sysfs parent and retain that mapping with the Wi-Fi results.

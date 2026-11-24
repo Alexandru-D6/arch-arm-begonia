@@ -21,5 +21,11 @@ install -Dm755 "$script_dir/connectivity/begonia-hotspot-start" "$rootfs/usr/loc
 install -Dm644 "$script_dir/connectivity/begonia-hotspot.service" "$rootfs/usr/lib/systemd/system/begonia-hotspot.service"
 # AP startup is opt-in after provisioning a local profile and country.
 install -Dm644 "$script_dir/connectivity/begonia-wifi.service" "$rootfs/usr/lib/systemd/system/begonia-wifi.service"
+install -Dm644 "$script_dir/connectivity/begonia-bluetooth.service" "$rootfs/usr/lib/systemd/system/begonia-bluetooth.service"
+install -Dm755 "$script_dir/connectivity/begonia-bluetooth" "$rootfs/usr/local/sbin/begonia-bluetooth"
 mkdir -p "$rootfs/etc/systemd/system/multi-user.target.wants"
 ln -sfn /usr/lib/systemd/system/begonia-wifi.service "$rootfs/etc/systemd/system/multi-user.target.wants/begonia-wifi.service"
+ln -sfn /usr/lib/systemd/system/begonia-bluetooth.service "$rootfs/etc/systemd/system/multi-user.target.wants/begonia-bluetooth.service"
+mkdir -p "$rootfs/etc/systemd/system/bluetooth.target.wants"
+ln -sfn /usr/lib/systemd/system/bluetooth.service "$rootfs/etc/systemd/system/bluetooth.target.wants/bluetooth.service"
+ln -sfn /usr/lib/systemd/system/bluetooth.service "$rootfs/etc/systemd/system/dbus-org.bluez.service"

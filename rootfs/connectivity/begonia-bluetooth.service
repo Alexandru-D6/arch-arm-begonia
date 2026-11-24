@@ -1,0 +1,13 @@
+[Unit]
+Description=Begonia onboard Bluetooth HCI transport
+Requires=begonia-wifi.service
+After=begonia-wifi.service
+Before=bluetooth.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/begonia-bluetooth
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

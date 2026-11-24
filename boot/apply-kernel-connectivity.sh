@@ -13,7 +13,8 @@ printf '%s  %s\n' "$digest" "$archive" | sha512sum -c -
 tar -xzf "$archive" --strip-components=1 "linux-$commit/drivers/misc/mediatek"
 for name in begonia-connectivity.patch begonia-wifi-irq-logging.patch \
     begonia-wifi-mgmt-registration.patch begonia-wifi-regulatory.patch \
-    begonia-wifi-channel-notify.patch begonia-wifi-sae-rsnxe.patch; do
+    begonia-wifi-channel-notify.patch begonia-wifi-sae-rsnxe.patch \
+    begonia-bluetooth-hci.patch begonia-bluetooth-quirks.patch; do
     patch_file="$script_dir/kernel-patches/$name"
     if patch --batch --silent --forward --dry-run -p1 < "$patch_file" >/dev/null 2>&1; then
         patch --batch --silent --forward -p1 < "$patch_file"
@@ -24,3 +25,5 @@ for name in begonia-connectivity.patch begonia-wifi-irq-logging.patch \
         exit 1
     fi
 done
+install -m644 "$script_dir/kernel-overlay/drivers/misc/mediatek/connectivity/common/hci_stp.c" \
+    drivers/misc/mediatek/connectivity/common/hci_stp.c

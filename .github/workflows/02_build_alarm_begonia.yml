@@ -145,7 +145,7 @@ jobs:
           for driver in snd-soc-mt6785-begonia snd-soc-mt6359 mt6359-accdet snd-soc-begonia-tfa9874 i2c-gpio; do
             modinfo -b mnt -k "$KVER" "$driver" > /dev/null
           done
-          for driver in mtk-vendor-btif wmt_drv wlan_gen4m; do
+          for driver in mtk-vendor-btif wmt_drv wlan_gen4m hci_stp bluetooth rfcomm; do
             modinfo -b mnt -k "$KVER" "$driver" > /dev/null
           done
           echo "KVER=$KVER" >> "$GITHUB_ENV"
@@ -209,7 +209,7 @@ jobs:
             pacman -Syu --noconfirm --needed \
               busybox \
               sudo vim nano git openssh rsync curl wget \
-              networkmanager iwd wpa_supplicant iw dnsmasq \
+              networkmanager iwd wpa_supplicant iw dnsmasq bluez bluez-utils \
               htop tmux \
               alsa-utils alsa-ucm-conf \
               pipewire pipewire-audio pipewire-alsa pipewire-pulse wireplumber python 2>&1

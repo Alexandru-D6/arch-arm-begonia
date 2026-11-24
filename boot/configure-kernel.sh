@@ -11,6 +11,8 @@ grep -q 'default-brightness = <1879>;' "$dts"
 grep -q 'max-brightness = <1879>;' "$dts"
 
 scripts/config --enable MEMCG_V1 --enable CPUSETS_V1 \
+    --module BT --enable BT_BREDR --enable BT_LE --module BT_RFCOMM \
+    --enable BT_RFCOMM_TTY --module BT_BEGONIA_STP \
     --module MTK_WMT_FWPORT --module MTK_WMT_DRV \
     --module MTK_WMT_FWPORT_BTIF --module MTK_WLAN_GEN4M \
     --enable CFG80211_WEXT \
@@ -38,6 +40,10 @@ for driver in MTK_WMT_FWPORT MTK_WMT_DRV MTK_WMT_FWPORT_BTIF MTK_WLAN_GEN4M; do
 done
 grep -Fx 'CONFIG_CFG80211_WEXT=y' .config
 grep -Fx 'CONFIG_WEXT_CORE=y' .config
+for driver in BT BT_RFCOMM BT_BEGONIA_STP; do
+    grep -Fx "CONFIG_${driver}=m" .config
+done
+grep -Fx 'CONFIG_BT_LE=y' .config
 # Keep servicing a boot-enabled watchdog while waiting for Power to start Arch.
 grep -Fx 'CONFIG_WATCHDOG_HANDLE_BOOT_ENABLED=y' .config
 grep -Fx 'CONFIG_WATCHDOG_OPEN_TIMEOUT=0' .config

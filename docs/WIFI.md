@@ -290,6 +290,66 @@ Build logs are `linux-kernel/wifi-regulatory-build.log`,
 `linux-kernel/hotspot-5g-sae-results.tar.gz` and on the phone under
 `/home/alarm/hotspot-5g-test/`.
 
+## Automatic AP startup — 2026-11-24
+
+Initially only `begonia-wifi.service` was enabled: the phone joined Guest1,
+all AP profiles had autoconnect disabled, and no AP boot service existed.
+The new `begonia-hotspot.service` starts the existing per-device profile using
+`begonia-hotspot-start` and the tested compatibility helper. It disables
+management of `wlan0`/`wlan1` before AP activation to keep the AP on 5 GHz.
+The image installer stages this service but leaves it disabled until a profile
+and operating country are provisioned. No passwords are included in the repo.
+
+On this handset `/etc/default/begonia-hotspot` contains:
+
+```sh
+AP_PROFILE=Begonia-5GHz-SAE-Test
+AP_COUNTRY=ES
+```
+
+After provisioning an AP profile on `ap0` and choosing the actual operating
+country, enable startup with `sudo systemctl enable --now begonia-hotspot`.
+The service reapplies the supplicant compatibility settings on every boot.
+Stopping the service stops the AP; to return to client mode:
+
+```sh
+sudo systemctl disable --now begonia-hotspot
+sudo nmcli device set wlan0 managed yes
+sudo nmcli device set wlan1 managed yes
+```
+
+One normal reboot was tested (not a power-off/cold-start cycle). Boot ID changed
+from `4a08f44f-a8b1-49b2-a524-1e66a35802f8` to
+`206d672d-592a-458f-a5a5-e15df2ec7d6d`, kernel `6.16.4-begonia-wifi`.
+
+| Check after reboot | Result |
+| --- | --- |
+| Driver service | Automatic success at 16:18:44 UTC |
+| AP service | Automatic success at 16:18:46 UTC, before SSH login |
+| Actual AP | `Begonia-5G-SAE`, 5180 MHz, channel 36, SAE/CCMP |
+| Station interfaces | `wlan0` and `wlan1` unmanaged |
+| Client | Nothing Phone 3a Pro authorized with SAE and required PMF |
+| DHCP | Fresh DHCPACK at 16:18:55 UTC, `10.42.0.137`; user confirmed connection |
+| Local traffic | 30/30 ping replies, one duplicate, 0% loss; mean 55.402 ms |
+| System health | No failed units; no kernel warning, call trace or callback suppression messages at inspection |
+
+The client initially had no Internet: the temporary USB default route, DNS and
+forwarding configuration from the previous test did not survive reboot. AP
+startup, authentication and DHCP worked independently. USB upstream settings
+were reapplied for this test; they remain temporary and are not part of the AP
+boot service. The user confirmed client Internet access after restoring that
+upstream. A longer ping run overlapped a client reconnection and was stopped
+after 53 probes (20 replies, 62.2642% loss); this does not qualify sustained
+traffic. The AP remained at 5180 MHz and the client was authorized again at
+final inspection. Production Android Auto is intended to use the source phone's
+mobile data, with USB supplying power to the Redmi.
+
+Logs are saved on the handset under `/home/alarm/ap-boot-test/` and locally
+under `release/ap-boot-20261124/` (ignored by Git). Full cold-start,
+Bluetooth coexistence and long-duration throughput acceptance remain pending.
+Host validation: all 25 existing tests passed, shell syntax checks passed, and
+`systemd-analyze verify` accepted the service on the handset.
+
 ## Artifacts and recovery
 
 Local artifacts (ignored by Git) are under `linux-kernel/`:

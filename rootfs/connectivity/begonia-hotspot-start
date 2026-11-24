@@ -1,0 +1,17 @@
+#!/bin/sh
+# Boot an existing, per-device AP profile; credentials stay in NetworkManager.
+set -eu
+: "${AP_PROFILE:?Set AP_PROFILE in /etc/default/begonia-hotspot}"
+: "${AP_COUNTRY:?Set AP_COUNTRY to the operating country's two-letter code}"
+case "$AP_COUNTRY" in
+    [A-Z][A-Z]) ;;
+    *) echo 'AP_COUNTRY must be a two-letter country code.' >&2; exit 1 ;;
+esac
+test "$(nmcli -g 802-11-wireless.mode connection show "$AP_PROFILE")" = ap
+test "$(nmcli -g connection.interface-name connection show "$AP_PROFILE")" = ap0
+# This firmware cannot keep a 5 GHz AP alongside a 2.4 GHz station link.
+for station in wlan0 wlan1; do
+    nmcli device set "$station" managed no
+done
+iw reg set "$AP_COUNTRY"
+exec /usr/local/sbin/begonia-hotspot-test "$AP_PROFILE"

@@ -1,0 +1,16 @@
+[Unit]
+Description=Begonia internal Wi-Fi access point
+Requires=begonia-wifi.service NetworkManager.service
+After=begonia-wifi.service NetworkManager.service
+ConditionPathExists=/etc/default/begonia-hotspot
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/default/begonia-hotspot
+ExecStart=/usr/local/sbin/begonia-hotspot-start
+ExecStop=/usr/bin/nmcli --wait 15 connection down ${AP_PROFILE}
+RemainAfterExit=yes
+TimeoutStartSec=90
+
+[Install]
+WantedBy=multi-user.target

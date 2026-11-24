@@ -25,6 +25,7 @@ scripts/config --enable MEMCG_V1 --enable CPUSETS_V1 \
     --module MTK_ADSP_MBOX --module MTK_SCP \
     --enable USB_USBNET --module USB_RTL8152 --module USB_NET_AX88179_178A \
     --module USB_NET_SMSC95XX --module USB_SERIAL_OPTION \
+    --module FUSE_FS \
     --module DM_VERITY --enable ZSWAP --disable LOCALVERSION_AUTO --set-str LOCALVERSION ""
 make ARCH=arm64 CROSS_COMPILE="${CROSS_COMPILE:-aarch64-linux-gnu-}" olddefconfig
 for driver in USB_RTL8152 USB_NET_AX88179_178A USB_NET_SMSC95XX; do
@@ -44,6 +45,7 @@ for driver in BT BT_RFCOMM BT_BEGONIA_STP; do
     grep -Fx "CONFIG_${driver}=m" .config
 done
 grep -Fx 'CONFIG_BT_LE=y' .config
+grep -Fx 'CONFIG_FUSE_FS=m' .config
 # Keep servicing a boot-enabled watchdog while waiting for Power to start Arch.
 grep -Fx 'CONFIG_WATCHDOG_HANDLE_BOOT_ENABLED=y' .config
 grep -Fx 'CONFIG_WATCHDOG_OPEN_TIMEOUT=0' .config

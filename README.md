@@ -16,6 +16,7 @@ Arch Linux ARM begonia
     ├── glibc (libc 2.42+)
     ├── pacman
     ├── systemd (multi-user.target)
+    ├── LIVI 10.5.0 (kiosk headless en tty1, seatd + PipeWire)
     ├── openssh
     ├── NetworkManager + tailscale
     └── módulos del kernel pmOS + firmware mediatek
@@ -67,7 +68,7 @@ Construye la imagen final:
 1. Descarga `ArchLinuxARM-aarch64-latest.tar.gz`
 2. Crea rootfs ext4 de 8 GB
 3. Compila el kernel y el DTB de begonia e instala sus módulos y el firmware de pmOS
-4. Configura systemd (multi-user, sshd, NetworkManager)
+4. Configura systemd (multi-user, sshd, NetworkManager) e instala LIVI 10.5.0 ARM64 con SHA-256 verificado, seatd y PipeWire para arrancar su kiosk en tty1
 5. Reconstruye boot.img con el kernel y DTB compilados, la cabecera v2 y el initramfs de pmOS con los módulos de arranque de esa misma compilación, incluidos el regulador MT6360 y el controlador USB-C necesarios para la red USB
 6. Publica `boot-begonia-arch.img` + `rootfs-archlinuxarm-begonia-console.img.xz`
 
@@ -78,7 +79,7 @@ El workflow 02 publica las imágenes bajo la etiqueta `nightly` en la sección R
 | Archivo | Descripción |
 |---|---|
 | `boot-begonia-arch.img` | Boot image (kernel + DTB de begonia + initramfs pmOS) |
-| `rootfs-archlinuxarm-begonia-console.img.xz` | Rootfs Arch Linux ARM (8 GB, comprimido) |
+| `rootfs-archlinuxarm-begonia-console.img.xz` | Rootfs Arch Linux ARM con LIVI headless (8 GB, nombre conservado por compatibilidad) |
 | `SHA256SUMS.txt` | Checksums |
 
 ## 🔧 Instalación
@@ -116,7 +117,7 @@ fastboot reboot
 
 ### Primer arranque
 
-El initramfs de pmOS busca el sistema ext4 con la etiqueta `pmOS_root` en `userdata` y arranca systemd de Arch en modo consola. La compilación elimina los UUID del sistema de referencia.
+El initramfs de pmOS busca el sistema ext4 con la etiqueta `pmOS_root` en `userdata` y arranca systemd de Arch. LIVI se inicia automáticamente en tty1 sin escritorio ni login; SSH sigue disponible. La compilación elimina los UUID del sistema de referencia. [Configuración, diagnóstico y vuelta al modo consola](docs/LIVI.md).
 
 Para conectarse:
 ```bash
@@ -168,6 +169,7 @@ tailscale up --accept-routes
 | **WiFi interno** | ✅ | MT6785/WMT + `wlan_gen4m`: conexión WPA2 a Guest1, DHCP, DNS e Internet verificados. [Instalación y resultados](docs/WIFI.md) |
 | **Bluetooth** | ✅ básico | HCI sobre WMT/STP/BTIF: BlueZ, emparejamiento y control RFCOMM verificados con AP de 5 GHz activo. Audio SCO y LIVI pendientes. [Detalles](docs/BLUETOOTH.md) |
 | **Audio** | ✅ | AUX estéreo + micrófono interno verificados con ALSA/PipeWire. Altavoz interno automático al desconectar AUX, probado en el teléfono. Pendiente de validación prolongada en coche. [Resultados](docs/AUDIO_TEST_RESULTS.md) · [Prueba de 5 segundos](docs/AUDIO.md) |
+| **LIVI** | Integrado en workflow 02 | Kiosk headless 10.5.0; arranque y proyección en el teléfono pendientes de validar. [Detalles](docs/LIVI.md) |
 | **Cámara** | ❌ | En desarrollo |
 | **Módem 4G** | ❌ | MT6779 — sin driver mainline |
 | **Batería (FGU)** | ⏳ | En port desde vendor kernel |
@@ -185,6 +187,7 @@ alarm-begonia/
 │   └── files.list                  # Archivos a incluir
 ├── rootfs/
 │   ├── prepare-rootfs.sh           # Preparación del rootfs
+│   ├── install-livi.sh             # Instalación offline del kiosk LIVI
 │   ├── packages.txt                # Paquetes a instalar
 │   ├── services.sh                 # Configuración de servicios
 │   └── firstboot.sh                # Primer arranque
@@ -203,7 +206,9 @@ alarm-begonia/
 - **Arch Linux ARM** — rootfs base
 - **Kupfer Linux** — documentación del enfoque Arch en dispositivos móviles
 - **Vivi AI** — pipeline de construcción automatizado
+- Based on LIVI by Lasse Heitgres (https://github.com/f-io/LIVI)
 
 ## 📜 Licencia
 
-MIT — construido sobre software libre de la comunidad.
+MIT — construido sobre software libre de la comunidad. Los archivos de LIVI
+en `rootfs/livi/upstream/` conservan GPL-3.0-or-later y su `NOTICE` de atribución.

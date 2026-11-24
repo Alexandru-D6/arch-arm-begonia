@@ -38,6 +38,8 @@ jobs:
           bash -n boot/apply-kernel-connectivity.sh boot/configure-kernel.sh rootfs/install-connectivity.sh
           sh -n rootfs/connectivity/begonia-wifi rootfs/connectivity/begonia-hotspot-test
           sh -n initramfs/charge-only.sh
+          bash -n rootfs/install-livi.sh rootfs/livi/livi-power.sh
+          sh -n rootfs/livi/upstream/livi-touch-filter
 
       - name: Install deps
         run: |
@@ -148,6 +150,7 @@ jobs:
           for driver in mtk-vendor-btif wmt_drv wlan_gen4m hci_stp bluetooth rfcomm; do
             modinfo -b mnt -k "$KVER" "$driver" > /dev/null
           done
+          modinfo -b mnt -k "$KVER" fuse > /dev/null
           echo "KVER=$KVER" >> "$GITHUB_ENV"
 
       - name: Install internal MediaTek Wi-Fi firmware and boot service
@@ -252,6 +255,12 @@ jobs:
           test -f mnt/etc/wireplumber/wireplumber.conf.d/51-begonia-aux.conf
           test -x mnt/usr/local/bin/begonia-mic-aux-test
 
+      - name: Install LIVI headless kiosk
+        run: |
+          sudo bash rootfs/install-livi.sh "$GITHUB_WORKSPACE/mnt" alarm
+          test -x mnt/home/alarm/LIVI/LIVI.AppImage
+          test -L mnt/etc/systemd/system/multi-user.target.wants/livi-kiosk.service
+
       - name: Cleanup & release
         run: |
           sudo umount --recursive "$GITHUB_WORKSPACE/mnt"
@@ -278,6 +287,7 @@ jobs:
 
             | Mejora | Detalle |
             |---|---|
+            | **LIVI** | 10.5.0 ARM64 verificado por SHA-256; kiosk headless en tty1, PipeWire y seatd. Proyección en el teléfono pendiente de validar |
             | 🐉 **Waydroid** | CGroups v1 habilitado → Android 13 (LineageOS) bootea dentro del contenedor |
             | 🔊 **Audio** | AUX + altavoz interno automático + micrófono interno, UCM2 y PipeWire; pruebas básicas en begonia, validación prolongada pendiente |
             | 🔌 **USB** | RTL8152 (Ethernet USB) + módems por puerto serie |
@@ -324,6 +334,11 @@ jobs:
             ```
 
             **Login:** `alarm` / `alarm`
+
+            LIVI arranca automáticamente en tty1; SSH sigue disponible. El nombre
+            del rootfs conserva `console` por compatibilidad. Configura país,
+            Wi-Fi y Bluetooth en LIVI antes de activar Android Auto inalámbrico.
+            Based on LIVI by Lasse Heitgres (https://github.com/f-io/LIVI).
           prerelease: true
           makeLatest: true
           allowUpdates: true

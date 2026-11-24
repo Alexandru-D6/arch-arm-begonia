@@ -92,6 +92,16 @@ class LiviInstallTests(unittest.TestCase):
         self.assertIn("ExecStopPost=\n", dropin)
         self.assertIn("Restart=on-failure\n", dropin)
         self.assertIn("StartLimitIntervalSec=0\n", dropin)
+        self.assertIn("ExecStartPre=/usr/local/lib/livi/livi-bluetooth-ready.sh", dropin)
+        wp_config = self.root / "home/alarm/.config/wireplumber/wireplumber.conf.d"
+        self.assertEqual((wp_config / "99-livi-hfp.conf").read_text(),
+                         'monitor.bluez.properties = {\n  bluez5.roles = [ a2dp_sink a2dp_source ]\n}\n')
+        self.assertIn("hfp_hf", (wp_config / "99-z-begonia-hfp.conf").read_text())
+        ap_dropin = (self.root / "etc/systemd/system/livi-wifi-ap.service.d/begonia.conf").read_text()
+        self.assertIn("Conflicts=begonia-hotspot.service", ap_dropin)
+        self.assertIn("After=begonia-wifi.service NetworkManager.service begonia-hotspot.service", ap_dropin)
+        for station in ("wlan0", "wlan1"):
+            self.assertIn(f"ExecStartPre=/usr/bin/nmcli device set {station} managed no", ap_dropin)
         self.assertTrue((self.root / "var/lib/systemd/linger/alarm").exists())
         sudoers = self.root / "etc/sudoers.d/99-LIVI-helper"
         self.assertEqual(sudoers.stat().st_mode & 0o777, 0o440)
@@ -100,7 +110,8 @@ class LiviInstallTests(unittest.TestCase):
         calls = self.calls()
         packages = next(c for c in calls if c[0] == "pacman")
         self.assertTrue({"fuse3", "mesa", "libinput", "seatd", "hostapd", "avahi",
-                         "pipewire", "pipewire-pulse", "wireplumber"} <= set(packages))
+                         "pipewire", "pipewire-pulse", "wireplumber",
+                         "libxrender", "vulkan-icd-loader", "v4l-utils"} <= set(packages))
         self.assertIn(["usermod", "-aG", "audio,video,render,input,seat", "alarm"], calls)
         self.assertIn(["systemctl", "enable", "seatd.service", "bluetooth.service",
                        "avahi-daemon.service", "livi-kiosk.service"], calls)

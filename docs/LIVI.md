@@ -25,6 +25,9 @@ aarch64 core/extra repository metadata checked during integration. LIVI bundles
 its GStreamer runtime; the host supplies the libraries listed in that manifest,
 including Mesa, libva, libssh, FUSE3 and the audio/session services. The kernel
 build explicitly enables the FUSE module.
+The begonia installer additionally supplies `libxrender`, `vulkan-icd-loader`
+and `v4l-utils`: the ARM64 bundle's FFmpeg and V4L2 plugins require these host
+libraries even when using software H.264 decoding.
 
 The account receives `audio,video,render,input,seat` access. The upstream kiosk
 unit uses an Arch PAM session, with a begonia drop-in to order startup after
@@ -38,6 +41,16 @@ installed, together with a root-owned helper for LIVI's power menu. As upstream
 requires, `alarm` can launch its extracted
 `~/.config/LIVI/driver/livi-helperd` as root without a password. This is a trusted
 maintenance/kiosk account, not a restricted application sandbox.
+
+LIVI 10.5.0 disables WirePlumber's hands-free roles and registers its own HFP
+profile with `Role=client`. On the tested BlueZ build that left no Hands-Free
+UUID advertised, and the source phone connected only as an ordinary Bluetooth
+audio device. The installer supplies a later user WirePlumber override enabling
+the native `hfp_hf` role and waits for its advertisement before launching LIVI.
+It also stages LIVI's own base role file, avoiding LIVI restarting WirePlumber
+mid-startup. The UI can still start if the controller is unavailable.
+PipeWire owns HFP/SCO in this configuration; LIVI logs that the profile/socket is
+already owned. Projection was tested with this arrangement; calls remain untested.
 
 No shell autologin is added. The tty1 getty is masked so the boot screen belongs
 to LIVI, and the kiosk restarts after a failure. Quitting LIVI leaves tty1 without
@@ -66,12 +79,19 @@ x86 host needs the same aarch64 binfmt/QEMU setup as workflow 02.
 2. Confirm LIVI appears without logging into the console, and verify touch and
    sound. The existing begonia PipeWire profile provides AUX/speaker switching
    and the internal microphone.
-3. In LIVI, select the Wi-Fi interface, onboard Bluetooth controller, country
-   and channel before enabling wireless Android Auto. Country, AP credentials,
-   rotation and wireless enablement are not preseeded by this installer.
+3. In LIVI, select **`ap0`** for Wi-Fi and **`hci0`** for Bluetooth, then the
+   operating country and 5 GHz channel (channel 36 tested) before enabling
+   wireless Android Auto. `wlan0` is the station interface; attempting to use it
+   for LIVI's AP failed with `Could not configure driver mode` on the handset.
+   Country, AP credentials, rotation and wireless enablement are not preseeded
+   by this installer.
 4. Stop/disable `begonia-hotspot.service` if you enabled the separate test AP;
    it must not compete with LIVI for AP control. See [Wi-Fi notes](WIFI.md) for
-   the vendor driver's AP and station-interface constraints.
+   the vendor driver's AP and station-interface constraints. The installed
+   `livi-wifi-ap.service.d/begonia.conf` also conflicts with that test service,
+   waits for connectivity startup and makes `wlan0`/`wlan1` unmanaged before
+   starting LIVI's AP. This prevents a saved 2.4 GHz station connection from
+   moving the shared radio away from 5 GHz.
 5. Pair the source phone and test wireless handover, projection, media, microphone,
    reconnect after a cold boot, and sustained video decoding.
 
@@ -123,6 +143,50 @@ A complete workflow image build remains untested. Wireless AP handover, SCO
 calls, rotation and video performance are separate acceptance tests. The initial
 core log reported no available video codecs; projection decoding still needs
 investigation before claiming Android Auto playback works.
+
+### Projection repair — 2026-11-24
+
+The subsequent handset investigation found four independent blockers:
+
+- The bundled `libgstlibav.so` could not load `libXrender.so.1` and
+  `libvulkan.so.1`. Installing the additional packages above and rebuilding
+  the user's GStreamer registry made `avdec_h264` load successfully. After
+  restarting LIVI, its log changed to `output codecs h264=sw h265=sw`.
+  A two-second 1280×720/30 fps H.264 sample decoded to I420 through the bundled
+  `h264parse ! avdec_h264 ! fakesink` pipeline, reaching EOS with exit status 0.
+  This small synthetic clip is a decoder smoke test, not a performance test.
+- Wireless Android Auto was enabled, but LIVI selected `wlan0`. Its helper
+  repeatedly failed to start hostapd while the old NetworkManager test hotspot
+  occupied `ap0`. Stopping/disabling the test service and selecting `ap0`
+  allowed LIVI's own hostapd/DHCP stack to start.
+- NetworkManager then reconnected `wlan0` to a saved 2.4 GHz network, moving the
+  AP off 5 GHz. Isolating both station interfaces restored channel 36; the
+  new AP service drop-in makes that isolation repeatable on startup.
+- The helper's client-only HFP registration did not advertise the Hands-Free
+  service. Allowing WirePlumber to own that service restored UUID `0x111e`.
+  After the source phone retried pairing, the user confirmed that Android Auto
+  setup appeared and a wireless projection session started.
+
+Verified on the handset: `hostapd_cli -i ap0 status` reported `ENABLED`,
+5180 MHz/channel 36, and the Nothing Phone (3a) Pro completed WPA2 authentication
+and received `10.10.0.41` from LIVI's DHCP server. The Android Auto Bluetooth
+profile and TCP listener on port 5277 were active. At 21:34:31 UTC the source
+phone connected to port 5277, completed TLS/protocol 6.1, negotiated a 1280×720
+session with H.265 video and logged `Android Auto projects over wifi`. At
+21:34:33 the decoder received its first frame and LIVI switched to Projection.
+After installing the persistent configuration and restarting the kiosk, LIVI
+automatically paged the saved phone, established a second wireless session at
+21:37:53 and decoded 1280×720 I420 frames with `avdec_h265` into `waylandsink`.
+Navigation updates also arrived; the kiosk remained active with no crash restarts.
+Audio, calls, sustained video performance and cold-boot reconnection remain
+unqualified. Handset diagnostic logs are in
+`/home/alarm/livi-projection-diagnostics/`.
+
+For an existing installation with a cached failed decoder scan, stop
+`livi-kiosk`, move `~/.cache/gstreamer-1.0/registry*.bin` aside as the kiosk user,
+then start it after installing the missing libraries. Preserve the AppImage,
+LIVI settings and Bluetooth bonds. On the repaired handset the original settings
+are backed up in `/root/livi-projection-backup/config.before.json`.
 
 ## Upstream files
 

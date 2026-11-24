@@ -28,7 +28,11 @@ printf '%s  %s\n' "$digest" "$appimage" | sha256sum -c -
 
 # Use upstream's pacman mapping for both core and headless (lite) packages.
 mapfile -t packages < <(awk -F '|' '$1 == "core" || $1 == "lite" { n=split($6,p," "); for(i=1;i<=n;i++) if(p[i]!="") print p[i] }' "$upstream/packages.txt" | sort -u)
-chroot "$root" pacman -S --noconfirm --needed "${packages[@]}" ttf-dejavu sudo
+# The ARM64 AppImage's FFmpeg plugin also links Xrender and the Vulkan loader.
+# Without these host libraries GStreamer blacklists libgstlibav, leaving even
+# software H.264 unavailable. v4l-utils supplies libv4l2 for the bundled V4L2 plugin.
+chroot "$root" pacman -S --noconfirm --needed "${packages[@]}" \
+    libxrender vulkan-icd-loader v4l-utils ttf-dejavu sudo
 # pacman hooks do not always run sysusers inside an image build chroot.
 chroot "$root" systemd-sysusers
 chroot "$root" usermod -aG audio,video,render,input,seat "$kiosk_user"
@@ -42,7 +46,20 @@ chown "$uid:$gid" "$root$user_home/.config"
 install -Dm644 "$upstream/99-LIVI.rules.template" "$root/etc/udev/rules.d/99-LIVI.rules"
 install -Dm755 "$upstream/livi-touch-filter" "$root/usr/local/lib/livi/livi-touch-filter"
 install -Dm755 "$script_dir/livi/livi-power.sh" "$root/usr/local/lib/livi/livi-power.sh"
+install -Dm755 "$script_dir/livi/livi-bluetooth-ready.sh" "$root/usr/local/lib/livi/livi-bluetooth-ready.sh"
 install -Dm644 "$script_dir/livi/livi-kiosk.pam" "$root/etc/pam.d/livi-kiosk"
+# LIVI creates the AP unit when wireless is enabled. Keep board-specific
+# ordering and station isolation outside that upstream-managed unit.
+install -Dm644 "$script_dir/livi/livi-wifi-ap-begonia.conf" \
+    "$root/etc/systemd/system/livi-wifi-ap.service.d/begonia.conf"
+# LIVI writes this exact base file in host_setup.rs and restarts WirePlumber
+# when its contents differ. Stage it before boot to avoid a startup race;
+# the later board override keeps the HF server role enabled.
+wp_config="$root$user_home/.config/wireplumber/wireplumber.conf.d"
+install -d -m755 -o "$uid" -g "$gid" "$root$user_home/.config/wireplumber" "$wp_config"
+printf 'monitor.bluez.properties = {\n  bluez5.roles = [ a2dp_sink a2dp_source ]\n}\n' > "$wp_config/99-livi-hfp.conf"
+chown "$uid:$gid" "$wp_config/99-livi-hfp.conf"
+install -m644 -o "$uid" -g "$gid" "$script_dir/livi/99-z-begonia-hfp.conf" "$wp_config/99-z-begonia-hfp.conf"
 
 sed -e "s|__USERNAME__|$kiosk_user|g" \
     -e "s|__HELPER__|$user_home/.config/LIVI/driver/livi-helperd|g" \
@@ -69,6 +86,7 @@ Environment=HOME=$user_home
 Environment=XDG_RUNTIME_DIR=/run/user/$uid
 Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus
 Environment=LIBSEAT_BACKEND=seatd
+ExecStartPre=/usr/local/lib/livi/livi-bluetooth-ready.sh
 # tty1 belongs to the kiosk, including after a crash. Keep maintenance on SSH
 # and other VTs rather than bringing the tty1 login prompt back automatically.
 ExecStopPost=

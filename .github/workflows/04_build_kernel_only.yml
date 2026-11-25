@@ -8,7 +8,12 @@ on:
         default: "6.16.4-r0"
       custom_cmdline:
         description: "Extra cmdline flags"
-        default: ""
+        default: "video=DSI-1:panel_orientation=right_side_up"
+      touchscreen_variant:
+        description: "Touch panel firmware (must match the rootfs selection)"
+        type: choice
+        options: [tianma, csot]
+        default: tianma
 
 permissions:
   actions: read
@@ -113,8 +118,11 @@ jobs:
       - name: Pack custom boot.img with new kernel
         env:
           EXTRA_CMDLINE: ${{ inputs.custom_cmdline }}
+          TOUCH_VARIANT: ${{ inputs.touchscreen_variant || 'tianma' }}
         run: |
+          bash rootfs/install-touchscreen.sh "$RUNNER_TEMP/touch-firmware" "$TOUCH_VARIANT"
           python3 scripts/repack-bootimg.py pmos-base/boot.img - - boot-begonia-kernel.img \
+            --touch-firmware "$RUNNER_TEMP/touch-firmware/usr/lib/firmware/novatek/nt36672a_begonia_csot.bin.zst" \
             --modules-dir "$RUNNER_TEMP/modroot/lib/modules/$KVER" \
             --kernel linux-kernel/arch/arm64/boot/Image.gz \
             --dtb linux-kernel/arch/arm64/boot/dts/mediatek/mt6785-xiaomi-begonia.dtb \

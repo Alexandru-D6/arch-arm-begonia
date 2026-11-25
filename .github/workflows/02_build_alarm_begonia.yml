@@ -6,6 +6,11 @@ on:
       rootfs_size:
         description: "Rootfs image size (GB)"
         default: "8"
+      touchscreen_variant:
+        description: "Touch panel firmware (Tianma verified on the development handset)"
+        type: choice
+        options: [tianma, csot]
+        default: tianma
 
 permissions:
   actions: read
@@ -156,11 +161,18 @@ jobs:
       - name: Install internal MediaTek Wi-Fi firmware and boot service
         run: sudo bash rootfs/install-connectivity.sh "$GITHUB_WORKSPACE/mnt"
 
+      - name: Select touchscreen firmware
+        env:
+          TOUCH_VARIANT: ${{ inputs.touchscreen_variant || 'tianma' }}
+        run: sudo bash rootfs/install-touchscreen.sh "$GITHUB_WORKSPACE/mnt" "$TOUCH_VARIANT"
+
       - name: Pack custom boot.img with new kernel
         run: |
           python3 scripts/repack-bootimg.py pmos-base/boot.img - - boot-begonia-arch.img \
             --modules-dir "mnt/usr/lib/modules/$KVER" \
             --charge-only \
+            --touch-firmware mnt/usr/lib/firmware/novatek/nt36672a_begonia_csot.bin.zst \
+            --extra-cmdline='video=DSI-1:panel_orientation=right_side_up' \
             --kernel linux-kernel/arch/arm64/boot/Image.gz \
             --dtb linux-kernel/arch/arm64/boot/dts/mediatek/mt6785-xiaomi-begonia.dtb
 

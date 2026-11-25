@@ -31,6 +31,8 @@ def main():
     parser.add_argument("--extra-cmdline", default="")
     parser.add_argument("--charge-only", action="store_true",
                         help="wait in charging-only mode on USB/charger starts")
+    parser.add_argument("--touch-firmware", type=Path,
+                        help="selected compressed begonia touch firmware for the ramdisk")
     args = parser.parse_args()
 
     with tempfile.TemporaryDirectory(dir=args.output.parent) as tmp:
@@ -58,6 +60,12 @@ def main():
             subprocess.run([sys.executable, Path(__file__).with_name("refresh-initramfs.py"),
                             fields["--ramdisk"], args.modules_dir, refreshed], check=True)
             fields["--ramdisk"] = str(refreshed)
+
+        if args.touch_firmware:
+            touch_ramdisk = work / "initramfs-touch.gz"
+            subprocess.run([sys.executable, Path(__file__).with_name("replace-touch-firmware.py"),
+                            fields["--ramdisk"], args.touch_firmware, touch_ramdisk], check=True)
+            fields["--ramdisk"] = str(touch_ramdisk)
 
         if args.charge_only:
             charging = work / "initramfs-charge-only.gz"

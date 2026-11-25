@@ -188,6 +188,59 @@ then start it after installing the missing libraries. Preserve the AppImage,
 LIVI settings and Bluetooth bonds. On the repaired handset the original settings
 are backed up in `/root/livi-projection-backup/config.before.json`.
 
+## Landscape orientation
+
+The begonia boot image uses
+`video=DSI-1:panel_orientation=right_side_up` to rotate LIVI by −90° into
+landscape. LIVI's compositor reads the DRM panel orientation and applies the
+same transform to the display and touchscreen. Workflow 02 includes the flag;
+workflow 04 offers it as the default
+extra command line. Changing this boot option takes effect after a reboot.
+
+The handset's previous boot partition is saved as
+`/root/livi-landscape-backup/boot-before-landscape.img`, with hashes and command
+lines in the adjacent `change.json`.
+
+Post-reboot verification on 2026-11-25: the active command line contains this
+flag, the compositor reports transform `_270` and a 2340×1080 workspace, and
+the kiosk is running with `NRestarts=0`. Wireless Android Auto reconnected and
+decoded 1280×720 video into the landscape workspace. The saved `spi1.0` touch
+calibration is near identity and remains mapped to DSI-1; it contains no extra
+90° rotation. The later physical test revealed the digitizer issue below.
+
+### Physical touchscreen firmware fix — 2026-11-25
+
+The handset loaded CSOT touchscreen firmware even though its digitizer requires
+Tianma firmware. It reported horizontally reversed coordinates in the upper
+half of landscape in both LIVI and Android Auto. A temporary virtual input
+filter corrected the symptom but created a duplicate device entry.
+
+Replacing the firmware in **both the rootfs and boot initramfs** with the Tianma
+blob resolved the issue on the physical device. After reboot, the user confirmed
+that all four corners work in LIVI and Android Auto with the filter disabled.
+Only the physical `spi1.0` touchscreen remains. The virtual filter, service and
+kiosk dependency were retired; no extra coordinate correction is required.
+
+The tested compressed Tianma blob has SHA-256
+`5bd2ba075d80d45739e1fa0b2fca466c12120a9a000ed4c37839d513d4a09a2a`.
+It is included in the checksum-pinned firmware archive already used by the
+connectivity installer. `rootfs/install-touchscreen.sh ROOTFS csot|tianma`
+selects the panel variant. The 6.16 DTB still requests the CSOT filename, so the
+installer places the selected bytes under that filename and records the
+selection in `/usr/share/begonia/touchscreen-variant`. The repacker's
+`--touch-firmware` option applies the same bytes to the early-boot ramdisk.
+
+Workflows 02 and 04 expose `touchscreen_variant`, defaulting to `tianma` for the
+verified development handset; select `csot` for an actual CSOT panel. Kernel-only
+updates must use the same selection as the installed rootfs. The DTB's panel
+compatible string reflects its build configuration and does not identify the
+physical panel automatically. See the [reference port's panel firmware notes](https://github.com/criollojoel10/begonia-pmos-tianma).
+
+Handset originals are saved under `/root/begonia-touch-firmware-backup/`.
+The verified replacement boot image and its unpacked components are in the
+ignored `release/touch-20261125/` directory. Rebinding this driver live failed
+with an IRQ mapping error, so firmware acceptance was performed after reboot.
+
 ## Upstream files
 
 `rootfs/livi/upstream/` contains unchanged files from LIVI v10.5.0:

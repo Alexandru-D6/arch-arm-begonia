@@ -241,6 +241,18 @@ The verified replacement boot image and its unpacked components are in the
 ignored `release/touch-20261125/` directory. Rebinding this driver live failed
 with an IRQ mapping error, so firmware acceptance was performed after reboot.
 
+### Wide Android Auto view
+
+On the landscape handset, `projectionWidth=1300` and `projectionHeight=600`
+match the panel's 13:6 aspect ratio. The previous 1280×720 view left 210 pixels
+unused at each side. After restarting LIVI, the source phone negotiated the
+1280×720 decoder tier with a 1280×590 active image and 65-pixel encoded margins
+above and below. The compositor maps the active image across the full 2340×1080
+workspace, keeping the existing decoder tier. Existing frame-rate, DPI and touch
+calibration settings are preserved. These are per-device LIVI settings in
+`~/.config/LIVI/config.json`; the previous handset configuration is backed up
+as `config.before-wide-projection.json` in the same directory.
+
 ## Upstream files
 
 `rootfs/livi/upstream/` contains unchanged files from LIVI v10.5.0:

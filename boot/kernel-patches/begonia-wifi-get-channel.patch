@@ -1,0 +1,41 @@
+--- a/drivers/misc/mediatek/connectivity/wlan/gen4m/os/linux/gl_init.c
++++ b/drivers/misc/mediatek/connectivity/wlan/gen4m/os/linux/gl_init.c
+@@ -458,7 +458,38 @@
+ #endif
+ };
+ #else /* CFG_ENABLE_UNIFY_WIPHY */
++/* nl80211 only includes the operating channel in GET_INTERFACE when the
++ * driver supplies get_channel. cfg80211 already tracks the AP definition
++ * after a successful start and on channel-switch notifications, and clears
++ * it on stop. Reporting it lets userspace distinguish a live AP from one
++ * that is still starting (LIVI otherwise waits its full 30-second timeout).
++ * Station/P2P-client channels are not tracked here; do not invent a value.
++ */
++static int mtk_cfg_get_channel(struct wiphy *wiphy,
++			       struct wireless_dev *wdev,
++			       unsigned int link_id,
++			       struct cfg80211_chan_def *chandef)
++{
++	const struct cfg80211_chan_def *operating;
++
++	if (link_id || wdev->valid_links)
++		return -EOPNOTSUPP;
++	if (wdev->iftype != NL80211_IFTYPE_AP &&
++	    wdev->iftype != NL80211_IFTYPE_P2P_GO)
++		return -ENODATA;
++	if (!wdev->links[0].ap.beacon_interval)
++		return -ENODATA;
++
++	/* The cfg80211 callback runs with the wiphy lock held. */
++	operating = wdev_chandef(wdev, 0);
++	if (!operating || !operating->chan || !cfg80211_chandef_valid(operating))
++		return -ENODATA;
++	*chandef = *operating;
++	return 0;
++}
++
+ static struct cfg80211_ops mtk_cfg_ops = {
++	.get_channel = mtk_cfg_get_channel,
+ 	.add_virtual_intf = mtk_cfg_add_iface,
+ 	.del_virtual_intf = mtk_cfg_del_iface,
+ 	.change_virtual_intf = mtk_cfg_change_iface,

@@ -253,6 +253,66 @@ calibration settings are preserved. These are per-device LIVI settings in
 `~/.config/LIVI/config.json`; the previous handset configuration is backed up
 as `config.before-wide-projection.json` in the same directory.
 
+## Projection startup delay — 2026-11-25
+
+The handset's captured boot showed a 41-second wait from the LIVI UI to
+projection despite Auto Connect and Dedicated Interface already being enabled:
+
+| Event (UTC) | Time |
+| --- | --- |
+| UI started | 17:47:28.742 |
+| Paging held for AP readiness | 17:47:29.105 |
+| Readiness wait ended; Bluetooth paging started | 17:47:58.561 |
+| Bluetooth connected | 17:47:59.652 |
+| Phone connected to the projection TCP listener | 17:48:08.057 |
+| First decoded frame; Projection displayed | 17:48:09.998 |
+
+The AP service reported `AP up` at boot +26.27 seconds, shortly after the UI
+appeared. However, `iw dev ap0 info` omitted the operating channel and LIVI's
+`--wifi-ap-status` returned `running false`. LIVI 10.5.0 requires the channel
+in its nl80211 interface query before releasing Bluetooth paging, so it waited
+the full 30-second readiness timeout. Bluetooth then succeeded on its first
+attempt; its retry backoff did not cause this captured delay.
+
+`begonia-wifi-get-channel.patch` adds the missing unified-wiphy `get_channel`
+callback for AP/P2P GO interfaces. It reports the channel definition maintained
+by cfg80211 after successful AP startup and channel-switch notifications,
+under the wiphy lock. Stopped APs, unsupported interface types and MLO requests
+return an error rather than a fabricated channel. This also lets LIVI read
+the AP's selected channel width. No LIVI binary or Bluetooth retry changes
+are needed.
+
+The replacement `wlan_gen4m.ko` builds for the installed
+`6.16.4-begonia-wifi` kernel; patch application/reversal and all 34 host tests
+pass. The checksum-verified module and a backup installer are staged at
+`/home/alarm/livi-startup-fix-20261125/`. The installer preserves the original module under
+`/root/livi-startup-backup-20261125/`; its `restore.sh` restores the original
+for the next reboot. Local baseline evidence and build artifacts are in
+`release/livi-startup-20261125/` (ignored).
+
+After installation and reboot on 2026-11-26, the module's SHA-256 matched
+the built artifact (`44715953668671c53fc521b94926a3f5762eb54c92f440522f5eedd5cf2a5961`).
+`iw dev ap0 info` now includes the operating channel and width, and
+`--wifi-ap-status` reports `running true`. The captured boot no longer logs
+`paging waits for the access point`:
+
+| Event (UTC) | Time |
+| --- | --- |
+| UI started | 16:00:40.623 |
+| Helper began Bluetooth paging | 16:00:42.622 |
+| Bluetooth connected | 16:00:43.070 |
+| Phone connected to the projection TCP listener | 16:00:47.256 |
+| First decoded frame; Projection displayed | 16:00:48.575 |
+
+UI-to-projection time fell from **41.256 seconds to 7.952 seconds** in these
+two boot captures. Removing the readiness timeout explains most of that
+33.304-second improvement; phone handover and decoder timing also varied.
+Both kiosk and AP services were active with `NRestarts=0` at inspection.
+The first paging-list delivery raced helper startup and was retried successfully
+when its socket became available. This is one successful post-fix boot,
+not a repeated cold-boot reliability test. Evidence is in `after.txt` in the
+same local artifact directory.
+
 ## Upstream files
 
 `rootfs/livi/upstream/` contains unchanged files from LIVI v10.5.0:

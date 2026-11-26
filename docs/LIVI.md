@@ -313,6 +313,48 @@ when its socket became available. This is one successful post-fix boot,
 not a repeated cold-boot reliability test. Evidence is in `after.txt` in the
 same local artifact directory.
 
+## Arch boot scheduling — 2026-11-26
+
+The measured pre-change boot took 2.385 seconds in the kernel and 11.076
+seconds in systemd userspace (13.461 seconds total, before LIVI finishes
+initializing its UI). `systemd-random-seed.service` waited 5.049 seconds for
+the kernel entropy pool. Only then did the default service dependencies let
+`begonia-wifi.service` start its 3.466-second radio initialization. Wi-Fi
+delayed NetworkManager, Bluetooth, user sessions and the kiosk in turn.
+
+The Wi-Fi unit now uses `DefaultDependencies=no`, with explicit dependencies
+on module loading, root remounting and its executable/module/firmware mounts.
+It can initialize the radio in parallel with early system services while
+remaining ordered before NetworkManager and shutdown. The random-seed service
+and entropy checks are unchanged. Existing downstream Bluetooth and kiosk
+dependencies continue to wait for Wi-Fi startup to finish.
+
+The unit passes `systemd-analyze verify` against the handset's actual
+services. After installation and reboot, boot ID
+`87dc058f-9d30-4336-bb4b-3bc596185ae3` showed:
+
+| Measurement | Before | After |
+| --- | --- | --- |
+| Kernel + systemd userspace startup | 13.461 s | 9.352 s |
+| Systemd userspace startup | 11.076 s | 6.845 s |
+| Wi-Fi initialization starts (kernel monotonic clock) | 8.239 s | 3.121 s |
+| Wi-Fi initialization finishes | 11.705 s | 7.381 s |
+| Kiosk service starts | 13.447 s | 9.339 s |
+
+Wi-Fi and random-seed initialization now start together. The measured total
+improvement is **4.109 seconds (31%)** in these two boot captures, even though
+the radio itself took longer on the second boot. These systemd measurements
+do not include bootloader time or the kiosk's subsequent UI initialization.
+Bluetooth, Wi-Fi, the AP and the kiosk were active with `NRestarts=0`.
+Android Auto automatically reconnected: the UI started at 16:10:34.198 UTC
+and displayed the first projection frame at 16:10:42.439 (8.241 seconds later).
+This validates one reboot; repeated cold-start timing remains unmeasured.
+
+The installer at `/home/alarm/arch-boot-fix-20261126/install.sh`
+backs up the old unit and provides
+`/root/arch-boot-backup-20261126/restore.sh` for rollback. Local artifacts and
+the before/after timing captures are in `release/arch-boot-20261126/` (ignored).
+
 ## Upstream files
 
 `rootfs/livi/upstream/` contains unchanged files from LIVI v10.5.0:

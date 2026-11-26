@@ -1,7 +1,13 @@
 [Unit]
 Description=Begonia internal MediaTek Wi-Fi
-After=systemd-modules-load.service
-Before=NetworkManager.service
+# Power the radio while sysinit (including random-seed initialization) runs.
+# Waiting for basic.target serialized about 3.5 seconds of firmware startup
+# behind a five-second entropy wait on the development handset.
+DefaultDependencies=no
+RequiresMountsFor=/usr/lib/modules /usr/lib/firmware /usr/local/sbin/begonia-wifi
+After=systemd-modules-load.service systemd-remount-fs.service
+Before=NetworkManager.service shutdown.target
+Conflicts=shutdown.target
 
 [Service]
 Type=oneshot

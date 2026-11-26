@@ -22,6 +22,7 @@ scripts/config --enable MEMCG_V1 --enable CPUSETS_V1 \
     --module SND_SOC_MT6785_BEGONIA --module SND_SOC_BEGONIA_TFA9874 \
     --module I2C_GPIO \
     --module INPUT_REGULATOR_HAPTIC \
+    --module MEDIATEK_MT6360_ADC --module LEDS_MT6360 \
     --module MTK_ADSP_MBOX --module MTK_SCP \
     --enable USB_USBNET --module USB_RTL8152 --module USB_NET_AX88179_178A \
     --module USB_NET_SMSC95XX --module USB_SERIAL_OPTION \
@@ -36,6 +37,8 @@ for driver in SND_SOC_MT6785_BEGONIA SND_SOC_MT6359 SND_SOC_MT6359_ACCDET SND_SO
 done
 grep -Fx 'CONFIG_POWER_RESET_MT6359=y' .config
 grep -Fx 'CONFIG_INPUT_REGULATOR_HAPTIC=m' .config
+grep -Fx 'CONFIG_MEDIATEK_MT6360_ADC=m' .config
+grep -Fx 'CONFIG_LEDS_MT6360=m' .config
 for driver in MTK_WMT_FWPORT MTK_WMT_DRV MTK_WMT_FWPORT_BTIF MTK_WLAN_GEN4M; do
     grep -Fx "CONFIG_${driver}=m" .config
 done

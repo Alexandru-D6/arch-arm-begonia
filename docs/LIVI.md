@@ -8,6 +8,17 @@ existing flashing instructions.
 
 Based on LIVI by Lasse Heitgres (https://github.com/f-io/LIVI).
 
+## Front charging indicator
+
+`livi-charge-led.service` starts with the kiosk and checks MT6360 every two
+seconds. The white front LED (`white:indicator`, brightness 1 of 12) stays on
+when USB is online and status is `Charging` or `Full`. It turns off when USB
+is removed, charging stops or the service stops. The two rear flash LEDs are
+never used. The service follows kiosk stop/restart and is enabled by the
+offline installer. It does not change charging current or voltage limits.
+See [charging-only mode](CHARGE_ONLY.md) for the short-press battery card and
+the pending handset installation.
+
 ## Image installation
 
 [`rootfs/install-livi.sh`](../rootfs/install-livi.sh) runs after the base packages,

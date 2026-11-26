@@ -45,6 +45,8 @@ install -d -m700 -o "$uid" -g "$gid" "$root$user_home/.config/LIVI"
 chown "$uid:$gid" "$root$user_home/.config"
 install -Dm644 "$upstream/99-LIVI.rules.template" "$root/etc/udev/rules.d/99-LIVI.rules"
 install -Dm755 "$upstream/livi-touch-filter" "$root/usr/local/lib/livi/livi-touch-filter"
+install -Dm755 "$script_dir/livi/livi-charge-led.sh" "$root/usr/local/lib/livi/livi-charge-led.sh"
+install -Dm644 "$script_dir/livi/livi-charge-led.service" "$root/etc/systemd/system/livi-charge-led.service"
 install -Dm755 "$script_dir/livi/livi-power.sh" "$root/usr/local/lib/livi/livi-power.sh"
 install -Dm755 "$script_dir/livi/livi-bluetooth-ready.sh" "$root/usr/local/lib/livi/livi-bluetooth-ready.sh"
 install -Dm644 "$script_dir/livi/livi-kiosk.pam" "$root/etc/pam.d/livi-kiosk"
@@ -99,6 +101,7 @@ install -d -m755 "$root/var/lib/systemd/linger"
 touch "$root/var/lib/systemd/linger/$kiosk_user"
 chroot "$root" systemctl --global enable pipewire.socket pipewire-pulse.socket wireplumber.service
 chroot "$root" systemctl enable seatd.service bluetooth.service avahi-daemon.service livi-kiosk.service
+chroot "$root" systemctl enable livi-charge-led.service
 chroot "$root" systemctl mask getty@tty1.service
 chroot "$root" systemctl set-default multi-user.target
 

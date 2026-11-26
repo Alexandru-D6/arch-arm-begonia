@@ -115,6 +115,9 @@ class LiviInstallTests(unittest.TestCase):
         self.assertIn(["usermod", "-aG", "audio,video,render,input,seat", "alarm"], calls)
         self.assertIn(["systemctl", "enable", "seatd.service", "bluetooth.service",
                        "avahi-daemon.service", "livi-kiosk.service"], calls)
+        self.assertIn(["systemctl", "enable", "livi-charge-led.service"], calls)
+        self.assertEqual((self.root / "usr/local/lib/livi/livi-charge-led.sh").read_bytes(),
+                         (REPO / "rootfs/livi/livi-charge-led.sh").read_bytes())
         self.assertIn(["systemctl", "mask", "getty@tty1.service"], calls)
 
     def test_invalid_sudoers_does_not_replace_existing_permissions(self):

@@ -45,8 +45,9 @@ def refresh(ramdisk, installed, output, work):
     # role switch. Without these modules it remains deferred in the initramfs,
     # so neither the network gadget nor the debug shell can appear over USB.
     # The charging-only stage acknowledges Power through the vibrator before
-    # the rootfs is mounted. Keep its driver in this early module tree too.
-    for name in ("mt6360-regulator", "tcpci_mt6360", "regulator-haptic"):
+    # the rootfs is mounted. Keep its driver, battery ADC and front LED driver
+    # in this early module tree too.
+    for name in ("mt6360-regulator", "tcpci_mt6360", "regulator-haptic", "mt6360-adc", "leds-mt6360"):
         if name not in builtins:
             if name not in by_name:
                 raise SystemExit(f"Missing begonia early-boot module: {name}")

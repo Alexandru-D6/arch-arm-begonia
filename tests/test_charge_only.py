@@ -7,6 +7,7 @@ import struct
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 REPO = Path(__file__).resolve().parents[1]
 HELPER = REPO / "initramfs/charge-only.sh"
@@ -20,12 +21,16 @@ if command == "iskey":
     path = root / "keys-count"
     count = int(path.read_text()) if path.exists() else 0
     path.write_text(str(count + 1))
-    sequence = os.environ.get("KEY_SEQUENCE", "1,0,0,0,0,1").split(",")
+    sequence = os.environ.get("KEY_SEQUENCE", "1," + "0," * 20 + "1").split(",")
     sys.exit(int(sequence[min(count, len(sequence)-1)]))
 if command == "sleep":
     path = root / "ticks"
     count = int(path.read_text()) + 1 if path.exists() else 1
     path.write_text(str(count))
+    with (root / "backlight-history").open("a") as history:
+        history.write((root / "sys/class/backlight/lm36274-backlight/brightness").read_text().strip() + "\n")
+    with (root / "led-history").open("a") as history:
+        history.write((root / "sys/class/leds/white:indicator/brightness").read_text())
     if count >= int(os.environ.get("REMOVE_USB_AT", "1000")):
         (root / "sys/class/power_supply/mt6360-chg.1.auto/online").write_text("0\n")
     elif count >= int(os.environ.get("CONNECT_USB_AT", "1000")):
@@ -58,6 +63,10 @@ class ChargeOnlyTest(unittest.TestCase):
         self.charger.mkdir(parents=True)
         (self.charger / "online").write_text("1\n")
         (self.charger / "status").write_text("Charging\n")
+        self.led = self.sys / "class/leds/white:indicator"
+        self.led.mkdir(parents=True)
+        (self.led / "brightness").write_text("0\n")
+        (self.led / "trigger").write_text("none\n")
         self.backlight = self.sys / "class/backlight/lm36274-backlight"
         self.backlight.mkdir(parents=True)
         (self.backlight / "brightness").write_text("1879\n")
@@ -68,15 +77,49 @@ class ChargeOnlyTest(unittest.TestCase):
             path = self.bin / name
             path.write_text(MOCK)
             path.chmod(0o755)
+        self.display = self.bin / "display"
+        self.display.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$FIXTURE/display-calls"\ncat "$FIXTURE/keys-count" >> "$FIXTURE/display-keys-count"\nprintf "\\n" >> "$FIXTURE/display-keys-count"\n')
+        self.display.chmod(0o755)
         self.log = self.root / "kmsg"
         self.env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}",
-                        FIXTURE=str(self.root), BEGONIA_CHARGE_SYSFS=str(self.sys),
+                        FIXTURE=str(self.root), BEGONIA_CHARGE_DISPLAY=str(self.display), BEGONIA_CHARGE_SYSFS=str(self.sys),
                         BEGONIA_CHARGE_CMDLINE=str(self.cmdline),
                         BEGONIA_CHARGE_KMSG=str(self.log))
 
     def run_helper(self, *args, **env):
         return subprocess.run(["sh", str(HELPER), *args], text=True,
-                              capture_output=True, env=dict(self.env, **env), timeout=5)
+                              capture_output=True, env=dict(self.env, **env), timeout=15)
+
+    def test_short_press_shows_voltage_estimate_then_goes_dark_without_boot(self):
+        adc = self.sys / "bus/iio/devices/iio:device7"
+        adc.mkdir(parents=True)
+        for suffix, value in (("label", "vbat"), ("raw", "3331"), ("scale", "1250"), ("offset", "0")):
+            (adc / f"in_voltage4_{suffix}").write_text(value + "\n")
+        result = self.run_helper(KEY_SEQUENCE="0,1", REMOVE_USB_AT="70")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.root / "display-keys-count").read_text().splitlines()[0], "1")
+        self.assertIn("-1 4163 1", (self.root / "display-calls").read_text())
+        levels = (self.root / "backlight-history").read_text().splitlines()
+        self.assertEqual(levels[0], "188")
+        self.assertIn("188", levels)
+        self.assertEqual(levels[60], "0")
+        self.assertTrue((self.root / "poweroff-called").exists())
+        self.assertNotIn("starting Arch", self.log.read_text())
+        self.assertFalse((self.root / "vibration-called").exists())
+
+    def test_charging_only_led_tracks_online_status_and_clears_on_exit(self):
+        for status, expected in (("Charging", "1"), ("Full", "1"), ("Not charging", "0")):
+            with self.subTest(status=status):
+                (self.charger / "online").write_text("1\n")
+                (self.charger / "status").write_text(status + "\n")
+                for name in ("ticks", "led-history", "keys-count"):
+                    (self.root / name).unlink(missing_ok=True)
+                result = self.run_helper(KEY_SEQUENCE="1", REMOVE_USB_AT="2")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                history = (self.root / "led-history").read_text().splitlines()
+                self.assertEqual(history[0], expected)
+                self.assertEqual(history[-1], "0")
+                self.assertEqual((self.led / "brightness").read_text(), "0\n")
 
     def test_normal_power_reboot_and_recovery_bypass_even_with_usb_reason(self):
         for mode in (0, 2, 3, 7):
@@ -110,7 +153,7 @@ class ChargeOnlyTest(unittest.TestCase):
         self.assertFalse(self.log.exists())
 
     def test_held_power_then_release_resumes_and_restores_backlight(self):
-        result = self.run_helper(KEY_SEQUENCE="0,1,0,0,0,0,0,1")
+        result = self.run_helper(KEY_SEQUENCE="0,1," + "0," * 21 + "1")
         self.assertEqual(result.returncode, 0, result.stderr)
         log = self.log.read_text()
         self.assertIn("entered charging-only", log)
@@ -118,7 +161,7 @@ class ChargeOnlyTest(unittest.TestCase):
         self.assertIn("Power released; starting Arch", log)
         self.assertEqual((self.backlight / "brightness").read_text(), "1879\n")
         self.assertEqual((self.backlight / "bl_power").read_text(), "0\n")
-        self.assertEqual((self.root / "keys-count").read_text(), "8")
+        self.assertEqual((self.root / "keys-count").read_text(), "24")
         self.assertFalse((self.root / "poweroff-called").exists())
         self.assertEqual((self.root / "vibration-called").read_text(), "-s 40000 -d 120")
 
@@ -138,7 +181,7 @@ class ChargeOnlyTest(unittest.TestCase):
 
     def test_initial_offline_reading_cannot_cause_a_usb_reboot_loop(self):
         (self.charger / "online").write_text("0\n")
-        result = self.run_helper(KEY_SEQUENCE=",".join(["1"] * 16 + ["0"] * 4 + ["1"]),
+        result = self.run_helper(KEY_SEQUENCE=",".join(["1"] * 16 + ["0"] * 20 + ["1"]),
                                  CONNECT_USB_AT="12")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse((self.root / "poweroff-called").exists())
@@ -148,7 +191,7 @@ class ChargeOnlyTest(unittest.TestCase):
 
     def test_initial_offline_can_still_be_started_with_power(self):
         (self.charger / "online").write_text("0\n")
-        result = self.run_helper(KEY_SEQUENCE=",".join(["1"] * 12 + ["0"] * 4 + ["1"]))
+        result = self.run_helper(KEY_SEQUENCE=",".join(["1"] * 12 + ["0"] * 20 + ["1"]))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse((self.root / "poweroff-called").exists())
         self.assertIn("Power released; starting Arch", self.log.read_text())
@@ -192,7 +235,8 @@ class ChargeOnlyArchiveTest(unittest.TestCase):
                 work = root / f"work{number}"
                 work.mkdir()
                 output = root / f"out{number}.gz"
-                module.add_charge_only(previous, output, work)
+                with patch.dict(os.environ, BEGONIA_CHARGE_CC="cc"):
+                    module.add_charge_only(previous, output, work)
                 contents = subprocess.check_output(["bsdtar", "-xOf", output, "init_2nd.sh"], text=True)
                 self.assertEqual(contents.count(module.BLOCK), 1)
                 self.assertLess(contents.index("setup_udev"), contents.index("/usr/bin/begonia-charge-only"))

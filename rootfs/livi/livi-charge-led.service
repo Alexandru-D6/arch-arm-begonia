@@ -1,0 +1,12 @@
+[Unit]
+Description=Begonia front charging indicator
+PartOf=livi-kiosk.service
+After=livi-kiosk.service
+
+[Service]
+ExecStart=/usr/local/lib/livi/livi-charge-led.sh
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=livi-kiosk.service

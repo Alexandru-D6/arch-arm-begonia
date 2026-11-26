@@ -15,8 +15,12 @@ udev loads the initramfs drivers, before USB networking and before mounting
 the Arch root filesystem:
 
 - USB starts leave the screen off, with the existing MT6360 charger running.
+- Press Power to show a battery card immediately for about three seconds.
+  Detection runs every 50 ms; showing the card does not wait for release.
+  The screen then goes dark without starting Arch. Another short press refreshes it.
 - Holding Power until the recognition vibration and releasing it continues
-  into Arch. The stage requires four consecutive key checks, about 1–2 seconds.
+  into Arch. The stage requires twenty consecutive key checks, about one second plus
+  sensor/display processing.
 - Removing USB while waiting powers the phone off through the working PWRHOLD
   shutdown handler, after USB presence has first been confirmed. Initial
   offline readings are ignored while Type-C detection settles; a later
@@ -26,7 +30,20 @@ the Arch root filesystem:
 This is a small Linux charging environment, rather than an electrically off
 processor. Arch, its services and its root filesystem stay inactive until
 Power is pressed. Charging current and voltage limits are left at their
-existing values; no battery-percentage display is provided.
+existing values. The card uses battery `capacity` if a Battery power supply
+provides it. The current kernel has no fuel-gauge power supply, so it instead
+shows five coarse voltage-based bars, measured battery voltage and **EST.**
+Charging voltage depends on current, temperature and battery condition; these
+bars are an approximate indication, not a calibrated state of charge. A
+missing voltage reading displays an unknown level rather than a fabricated
+percentage. Green bars and a small lightning symbol mean the charger reports
+`Charging`.
+
+The card uses a small static ARM64 fbdev renderer (`initramfs/charge-display.c`),
+with no mounted rootfs, external fonts or graphical services. The backlight
+runs at about 10% while the card is visible. Framebuffer or sensor failures do
+not prevent the long-press boot path. The normal console and original
+backlight settings are restored before continuing boot.
 
 The kernel handles the boot-enabled watchdog while waiting. The build checks
 `CONFIG_WATCHDOG_HANDLE_BOOT_ENABLED=y` and `CONFIG_WATCHDOG_OPEN_TIMEOUT=0`.
@@ -40,7 +57,11 @@ command line also bypasses it for diagnosis.
 `init_2nd.sh`, before `setup_usb_network`. It preserves the archive's other
 files, firmware, ownership, device nodes and symlinks and can be applied again
 without duplicating the hook. Unsupported initramfs layouts fail during image
-construction.
+construction. The builder needs an ARM64 C compiler with static libc and Linux
+UAPI headers (`aarch64-linux-gnu-gcc` in CI); `BEGONIA_CHARGE_CC` can select a
+compiler wrapper with a complete sysroot. Archive tests use a native compiler
+for their isolated fixture. `refresh-initramfs.py` includes `mt6360-adc` and
+its dependencies for voltage readings before the rootfs is mounted.
 
 The workflow passes `--charge-only` to `scripts/repack-bootimg.py`, after
 refreshing the matching kernel modules. The working kernel, DTB and PWRHOLD
@@ -100,3 +121,51 @@ Final boot ID: `49dceec7-9239-4a60-9991-2b79af88d182`. Its log records
 charging-only entry at 1.094 s, Charging at 2.510 s, the recognition pulse at
 21.270 s, and Power release / Arch startup at 21.822 s. The early haptic device
 registered at 0.823 s. The original PWRHOLD handler remains registered.
+
+## Charging card update — 2026-11-26
+
+The update was installed on the connected handset from
+`release/charging-indicators-20261126/`. Its boot image preserves the Tianma
+image's kernel, DTB and recovery DTBO; only the ramdisk changes. The installer
+checks the existing boot image against that baseline, backs up the full boot
+partition and verifies the write. On the connected phone, run:
+
+```sh
+sudo bash /home/alarm/charging-indicators-20261126/install.sh
+```
+
+Reboot once after installation. Then power off with USB connected, press Power, and check that the card disappears after about three
+seconds while Arch stays inactive. Holding Power until vibration and releasing
+must still start Arch. The installer verified the boot write and started the
+LED service. Physical confirmation of the card remains pending after restart. Rollback:
+
+```sh
+sudo bash /root/charging-indicators-before-20261126/restore.sh
+```
+
+All 36 host tests pass, including charging mode selection, short press/timeout,
+voltage scaling, long press, key failure, delayed charger detection, USB
+removal, repeated archive injection, LED transitions and offline LIVI staging.
+
+### Charging-only LED and press detection correction
+
+`release/charging-indicators-v2-20261126/` contains a second update based on the
+first card image. It adds `leds-mt6360` and dependencies to the initramfs and
+loads the driver before the charging loop. The loop owns only `white:indicator`
+and applies the same online + Charging/Full policy as LIVI, then clears the LED
+before boot handoff. Missing LED hardware does not block charging or startup.
+The card is now drawn on the first detected press, instead of after release;
+polling is 50 ms. The card timeout, long-hold threshold and disconnect debounce
+remain about three, one and two seconds respectively. The LIVI service is
+unchanged. Regression coverage includes display invocation while Power is
+still held and LED changes in charging-only mode. All 37 host tests pass.
+The second image has been copied to the handset. Install with:
+
+```sh
+sudo bash /home/alarm/charging-indicators-v2-20261126/install.sh
+```
+
+The installer verifies the first card image as its baseline, saves a full
+backup in `/root/charging-indicators-v2-before-20261126/`, then writes and
+verifies the new image. It does not change the working LIVI LED service.
+Installation/physical validation of this second image is pending.

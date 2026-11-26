@@ -50,15 +50,67 @@ if [ -r "$backlight/brightness" ]; then
     printf '0\n' > "$backlight/brightness"
     printf '4\n' > "$backlight/bl_power"
 fi
+hide_display() {
+    if [ -n "$brightness" ]; then
+        printf '0\n' > "$backlight/brightness"
+        printf '4\n' > "$backlight/bl_power"
+    fi
+}
+show_display() {
+    capacity=-1
+    mv=0
+    for supply in "$sysfs"/class/power_supply/*; do
+        [ -r "$supply/type" ] || continue
+        [ "$(cat "$supply/type")" = Battery ] || continue
+        read -r capacity < "$supply/capacity" || capacity=-1
+        case "$capacity" in *[!0-9]*|'') capacity=-1 ;; esac
+        [ "$capacity" -le 100 ] || capacity=-1
+        break
+    done
+    # MT6360 voltage ADC scale is in microvolts. Find by label, not IIO index.
+    for label in "$sysfs"/bus/iio/devices/iio:device*/in_voltage*_label; do
+        [ -r "$label" ] || continue
+        [ "$(cat "$label")" = vbat ] || continue
+        base=${label%_label}
+        mv=$(awk 'FNR==1 { a[++n]=$1 } END { if(n==3) printf "%d", (a[1]+a[3])*a[2]/1000 }' "${base}_raw" "${base}_scale" "${base}_offset" 2>/dev/null)
+        case "$mv" in *[!0-9]*|'') mv=0 ;; esac
+        [ "$mv" -ge 2500 ] && [ "$mv" -le 4600 ] || mv=0
+        break
+    done
+    read -r state < "$charger/status" || state=Unknown
+    active=0
+    [ "$state" != Charging ] || active=1
+    if "$display" "$capacity" "$mv" "$active"; then
+        if [ -n "$brightness" ]; then
+            read -r maximum < "$backlight/max_brightness" || maximum=$brightness
+            printf '0\n' > "$backlight/bl_power"
+            printf '%s\n' "$((maximum / 10 + 1))" > "$backlight/brightness"
+        fi
+        visible=60
+    else
+        log 'charging display unavailable; keeping screen dark'
+    fi
+}
 restore_backlight() {
+    [ ! -w "$led/brightness" ] || printf '0\n' > "$led/brightness"
+    hide_display
+    [ ! -x "$display" ] || "$display" --restore
+
     if [ -n "$brightness" ]; then
         printf '%s\n' "$bl_power" > "$backlight/bl_power"
         printf '%s\n' "$brightness" > "$backlight/brightness"
     fi
 }
+led="$sysfs/class/leds/white:indicator"
+led_ready=false
+last_led=
 trap restore_backlight EXIT
 
 log "entered charging-only mode (boot mode $bootmode); hold Power to start Arch"
+modprobe -q mt6360-adc 2>/dev/null || true
+modprobe -q leds-mt6360 2>/dev/null || true
+display=${BEGONIA_CHARGE_DISPLAY:-/usr/bin/begonia-charge-display}
+visible=0
 held=0
 offline=0
 ticks=0
@@ -66,13 +118,20 @@ seen_online=false
 last_online=
 while :; do
     if iskey KEY_POWER; then
+        # Show on the press edge, without waiting for release. A long hold
+        # still follows the existing vibration/release path to start Arch.
+        [ "$held" -ne 0 ] || show_display
         held=$((held + 1))
     else
         result=$?
         [ "$result" = 1 ] || { log 'power-key check failed; continuing boot'; exit 0; }
         held=0
     fi
-    if [ "$held" -ge 4 ]; then
+    if [ "$visible" -gt 0 ]; then
+        visible=$((visible - 1))
+        [ "$visible" -ne 0 ] || hide_display
+    fi
+    if [ "$held" -ge 20 ]; then
         log 'Power held; waiting for release before starting Arch'
         # The bootloader is not re-entered on this path, so supply the
         # recognition pulse here using the existing pmOS feedback utility.
@@ -82,7 +141,7 @@ while :; do
         else
             log 'Power recognition vibration unavailable; continuing'
         fi
-        while iskey KEY_POWER; do sleep 0.25; done
+        while iskey KEY_POWER; do sleep 0.05; done
         log 'Power released; starting Arch'
         exit 0
     fi
@@ -97,17 +156,34 @@ while :; do
         1) seen_online=true; offline=0 ;;
         *) log 'charger state unreadable; continuing boot'; exit 0 ;;
     esac
-    if [ "$offline" -ge 8 ] && [ "$held" = 0 ]; then
+    if [ "$offline" -ge 40 ] && [ "$held" = 0 ]; then
         log 'USB removed; powering off'
         poweroff -f
         log 'poweroff returned unexpectedly; continuing boot'
         exit 0
+    fi
+    # The rootfs/LIVI service is deliberately absent in this mode. Own the
+    # same front indicator here, after its early driver has been loaded.
+    if [ -w "$led/brightness" ]; then
+        if ! $led_ready; then
+            printf 'none\n' > "$led/trigger"
+            led_ready=true
+        fi
+        read -r status < "$charger/status" || status=Unknown
+        value=0
+        if [ "$online" = 1 ]; then
+            case "$status" in Charging|Full) value=1 ;; esac
+        fi
+        if [ "$value" != "$last_led" ]; then
+            printf '%s\n' "$value" > "$led/brightness"
+            last_led=$value
+        fi
     fi
     if [ "$ticks" = 0 ] || [ "$online" != "$last_online" ]; then
         read -r status < "$charger/status" || status=Unknown
         log "charger status=$status, online=$online"
     fi
     last_online=$online
-    ticks=$(((ticks + 1) % 240))
-    sleep 0.25
+    ticks=$(((ticks + 1) % 1200))
+    sleep 0.05
 done

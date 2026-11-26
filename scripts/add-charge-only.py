@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Add begonia's charging-only stage to the known pmOS initramfs layout."""
 import argparse
+import os
+import shlex
+import shutil
 from pathlib import Path
 import subprocess
 import tempfile
@@ -35,20 +38,33 @@ def add_charge_only(ramdisk, output, work):
     helper.parent.mkdir(parents=True)
     helper.write_bytes((Path(__file__).resolve().parents[1] / "initramfs/charge-only.sh").read_bytes())
     helper.chmod(0o755)
+    # Build a self-contained ARM64 binary, usable before mounting the rootfs.
+    compiler = os.environ.get("BEGONIA_CHARGE_CC") or shutil.which("aarch64-linux-gnu-gcc")
+    if not compiler:
+        local = Path(__file__).resolve().parents[1] / "linux-kernel/toolchain/bin/aarch64-linux-gcc"
+        if local.exists():
+            compiler = str(local)
+    if not compiler:
+        raise ValueError("ARM64 C compiler required (or set BEGONIA_CHARGE_CC)")
+    display = stage / "usr/bin/begonia-charge-display"
+    subprocess.run([*shlex.split(compiler), "-Os", "-static", "-Wall", "-Wextra", "-Werror",
+                    str(Path(__file__).resolve().parents[1] / "initramfs/charge-display.c"),
+                    "-o", str(display)], check=True)
+    display.chmod(0o755)
     second = stage / "init_2nd.sh"
     second.write_text(init)
     second.chmod(0o755)
 
     # Preserve the archive's ownership, symlinks and device nodes. Only replace
-    # these two regular files; no need to extract the root-owned archive.
+    # these regular files; no need to extract the root-owned archive.
     keep = work / "keep.tar"
     overlay = work / "overlay.tar"
     command = ["bsdtar", "-cf", keep]
-    for name in ("init_2nd.sh", "usr/bin/begonia-charge-only"):
+    for name in ("init_2nd.sh", "usr/bin/begonia-charge-only", "usr/bin/begonia-charge-display"):
         command.extend(("--exclude", name, "--exclude", f"./{name}"))
     subprocess.run([*command, f"@{ramdisk}"], check=True)
     subprocess.run(["bsdtar", "-cf", overlay, "--uid", "0", "--gid", "0",
-                    "-C", stage, "init_2nd.sh", "usr/bin/begonia-charge-only"], check=True)
+                    "-C", stage, "init_2nd.sh", "usr/bin/begonia-charge-only", "usr/bin/begonia-charge-display"], check=True)
     subprocess.run(["bsdtar", "--format=newc", "-czf", output,
                     f"@{keep}", f"@{overlay}"], check=True)
 

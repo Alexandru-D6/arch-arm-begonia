@@ -1,5 +1,38 @@
 # Begonia power-off investigation and fix
 
+## Running phone: power button — 2026-11-27
+
+While Arch is running, releasing Power before three seconds toggles the screen.
+Holding it continuously for three seconds sends a 120 ms acknowledgment vibration
+and requests a normal `systemctl poweroff`. Releasing after that vibration does
+not toggle the screen. A key held across service startup must be released before
+the next press can act.
+
+`rootfs/install-livi.sh` installs and enables `begonia-power-button.service`.
+Its Python standard-library helper discovers `mtk-pmic-keys` and
+`regulator-haptic` by name, uses monotonic evdev timestamps for the hold threshold,
+and blanks the `lm36274-backlight` panel while preserving its brightness for wake.
+It does not suspend Arch, so the kiosk and network services continue running.
+The service holds logind's `handle-power-key` inhibitor; a logind drop-in also
+disables its default short-press shutdown on subsequent boots. Live installation
+does not require restarting logind or the kiosk.
+
+Verified on the running phone over USB SSH:
+
+- Injected short presses through the real PMIC evdev device changed actual
+  backlight brightness from 1879 to 0, then back to 1879.
+- A virtual power key exercised the same listener, including an autorepeat
+  event. The real haptic upload/play succeeded and the intercepted shutdown
+  request arrived after 3.184 s, including the 150 ms vibration wait.
+- The production service remained enabled, active, and at zero restarts; LIVI
+  remained active. This test intercepted shutdown to leave the phone running.
+- Host tests cover the three-second boundary, short presses, startup with the
+  key held, repeated presses, vibration parameters, and brightness restoration.
+
+Deployment/test artifacts are in `release/power-button-20261127/`; backups of
+replaced files or markers for absent originals are on the phone under
+`/root/begonia-power-button-before-20261127/`.
+
 ## Symptom and cause
 
 After a short power-button press or `systemctl poweroff`, the original mainline

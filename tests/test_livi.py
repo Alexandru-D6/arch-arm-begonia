@@ -116,6 +116,12 @@ class LiviInstallTests(unittest.TestCase):
         self.assertIn(["systemctl", "enable", "seatd.service", "bluetooth.service",
                        "avahi-daemon.service", "livi-kiosk.service"], calls)
         self.assertIn(["systemctl", "enable", "livi-charge-led.service"], calls)
+        self.assertIn(["systemctl", "enable", "begonia-power-button.service"], calls)
+        self.assertEqual((self.root / "usr/local/lib/livi/begonia-power-button.py").read_bytes(),
+                         (REPO / "rootfs/livi/begonia-power-button.py").read_bytes())
+        policy = (self.root / "etc/systemd/logind.conf.d/90-begonia-power-button.conf").read_text()
+        self.assertIn("HandlePowerKey=ignore", policy)
+        self.assertIn("HandlePowerKeyLongPress=ignore", policy)
         self.assertEqual((self.root / "usr/local/lib/livi/livi-charge-led.sh").read_bytes(),
                          (REPO / "rootfs/livi/livi-charge-led.sh").read_bytes())
         self.assertIn(["systemctl", "mask", "getty@tty1.service"], calls)

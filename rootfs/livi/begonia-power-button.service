@@ -1,0 +1,14 @@
+[Unit]
+Description=Begonia power button: screen toggle and three-second shutdown
+Wants=systemd-logind.service
+After=systemd-logind.service
+Before=livi-kiosk.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/systemd-inhibit --what=handle-power-key --who=begonia-power-button --why=Custom-power-button-handling --mode=block /usr/bin/python -u /usr/local/lib/livi/begonia-power-button.py
+Restart=on-failure
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

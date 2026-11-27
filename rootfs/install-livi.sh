@@ -32,7 +32,7 @@ mapfile -t packages < <(awk -F '|' '$1 == "core" || $1 == "lite" { n=split($6,p,
 # Without these host libraries GStreamer blacklists libgstlibav, leaving even
 # software H.264 unavailable. v4l-utils supplies libv4l2 for the bundled V4L2 plugin.
 chroot "$root" pacman -S --noconfirm --needed "${packages[@]}" \
-    libxrender vulkan-icd-loader v4l-utils ttf-dejavu sudo
+    libxrender vulkan-icd-loader v4l-utils ttf-dejavu sudo python
 # pacman hooks do not always run sysusers inside an image build chroot.
 chroot "$root" systemd-sysusers
 chroot "$root" usermod -aG audio,video,render,input,seat "$kiosk_user"
@@ -48,6 +48,9 @@ install -Dm755 "$upstream/livi-touch-filter" "$root/usr/local/lib/livi/livi-touc
 install -Dm755 "$script_dir/livi/livi-charge-led.sh" "$root/usr/local/lib/livi/livi-charge-led.sh"
 install -Dm644 "$script_dir/livi/livi-charge-led.service" "$root/etc/systemd/system/livi-charge-led.service"
 install -Dm755 "$script_dir/livi/livi-power.sh" "$root/usr/local/lib/livi/livi-power.sh"
+install -Dm644 "$script_dir/livi/begonia-power-button.py" "$root/usr/local/lib/livi/begonia-power-button.py"
+install -Dm644 "$script_dir/livi/begonia-power-button.service" "$root/etc/systemd/system/begonia-power-button.service"
+install -Dm644 "$script_dir/livi/90-begonia-power-button.conf" "$root/etc/systemd/logind.conf.d/90-begonia-power-button.conf"
 install -Dm755 "$script_dir/livi/livi-bluetooth-ready.sh" "$root/usr/local/lib/livi/livi-bluetooth-ready.sh"
 install -Dm644 "$script_dir/livi/livi-kiosk.pam" "$root/etc/pam.d/livi-kiosk"
 # LIVI creates the AP unit when wireless is enabled. Keep board-specific
@@ -102,6 +105,7 @@ touch "$root/var/lib/systemd/linger/$kiosk_user"
 chroot "$root" systemctl --global enable pipewire.socket pipewire-pulse.socket wireplumber.service
 chroot "$root" systemctl enable seatd.service bluetooth.service avahi-daemon.service livi-kiosk.service
 chroot "$root" systemctl enable livi-charge-led.service
+chroot "$root" systemctl enable begonia-power-button.service
 chroot "$root" systemctl mask getty@tty1.service
 chroot "$root" systemctl set-default multi-user.target
 

@@ -1,0 +1,32 @@
+--- a/drivers/misc/mediatek/Kconfig
++++ b/drivers/misc/mediatek/Kconfig
+@@ -34,3 +34,11 @@
+ 	help
+ 	  Expose the onboard MT6785 Bluetooth controller to Linux HCI using
+ 	  the vendor WMT power management and STP transport over BTIF.
++
++config MTK_BEGONIA_GPS
++	tristate "Begonia GPS binary transport over WMT/STP"
++	depends on MTK_WMT_DRV
++	help
++	  Expose /dev/stpgps for a MediaTek positioning engine. This is a
++	  binary chip protocol, not a serial NMEA receiver. A userspace
++	  engine is required before applications such as LIVI can use GPS.
+--- a/drivers/misc/mediatek/connectivity/common/Makefile
++++ b/drivers/misc/mediatek/connectivity/common/Makefile
+@@ -105,3 +105,4 @@
+ wmt_drv-objs += debug_utility/connsys_debug_utility.o
+ 
+ obj-$(CONFIG_BT_BEGONIA_STP) += hci_stp.o
++obj-$(CONFIG_MTK_BEGONIA_GPS) += gps_stp.o
+--- a/drivers/misc/mediatek/connectivity/common/common_main/core/include/wmt_func.h
++++ b/drivers/misc/mediatek/connectivity/common/common_main/core/include/wmt_func.h
+@@ -46,7 +46,7 @@
+ #define CFG_FUNC_FM_SUPPORT 0
+ #endif
+ 
+-#if IS_ENABLED(CONFIG_MTK_COMBO_GPS)
++#if IS_ENABLED(CONFIG_MTK_COMBO_GPS) || IS_ENABLED(CONFIG_MTK_BEGONIA_GPS)
+ #define CFG_FUNC_GPS_SUPPORT 1
+ #define CFG_FUNC_GPSL5_SUPPORT 1
+ #else

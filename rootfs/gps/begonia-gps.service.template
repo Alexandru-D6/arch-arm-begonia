@@ -1,0 +1,24 @@
+[Unit]
+Description=Begonia internal GPS for LIVI
+PartOf=livi-kiosk.service
+After=begonia-wifi.service livi-kiosk.service
+Wants=begonia-wifi.service
+StartLimitIntervalSec=120
+StartLimitBurst=3
+
+[Service]
+Type=simple
+Group=__GROUP__
+ExecStart=/usr/local/lib/begonia-gps/begonia-gps --config __HOME__/.config/LIVI/config.json
+RuntimeDirectory=begonia-gps begonia-gps-root
+RuntimeDirectoryMode=0750
+StateDirectory=begonia-gps
+StateDirectoryMode=0700
+PrivateMounts=yes
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillMode=mixed
+
+[Install]
+WantedBy=livi-kiosk.service

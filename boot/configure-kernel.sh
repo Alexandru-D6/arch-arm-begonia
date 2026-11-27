@@ -15,6 +15,7 @@ scripts/config --enable MEMCG_V1 --enable CPUSETS_V1 \
     --enable BT_RFCOMM_TTY --module BT_BEGONIA_STP \
     --module MTK_WMT_FWPORT --module MTK_WMT_DRV \
     --module MTK_WMT_FWPORT_BTIF --module MTK_WLAN_GEN4M \
+    --module MTK_BEGONIA_GPS \
     --enable CFG80211_WEXT \
     --enable POWER_RESET_MT6359 \
     --module NF_CT_NETLINK --module NF_NAT_FTP --module NF_NAT_TFTP \
@@ -39,7 +40,7 @@ grep -Fx 'CONFIG_POWER_RESET_MT6359=y' .config
 grep -Fx 'CONFIG_INPUT_REGULATOR_HAPTIC=m' .config
 grep -Fx 'CONFIG_MEDIATEK_MT6360_ADC=m' .config
 grep -Fx 'CONFIG_LEDS_MT6360=m' .config
-for driver in MTK_WMT_FWPORT MTK_WMT_DRV MTK_WMT_FWPORT_BTIF MTK_WLAN_GEN4M; do
+for driver in MTK_WMT_FWPORT MTK_WMT_DRV MTK_WMT_FWPORT_BTIF MTK_WLAN_GEN4M MTK_BEGONIA_GPS; do
     grep -Fx "CONFIG_${driver}=m" .config
 done
 grep -Fx 'CONFIG_CFG80211_WEXT=y' .config

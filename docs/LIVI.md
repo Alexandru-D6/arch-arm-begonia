@@ -8,6 +8,14 @@ existing flashing instructions.
 
 Based on LIVI by Lasse Heitgres (https://github.com/f-io/LIVI).
 
+## Built-in GPS
+
+Workflow 02 also installs the begonia GPS transport and NMEA adapter. LIVI uses
+`/run/begonia-gps/nmea`; its GPS switch starts/stops the internal receiver.
+The stock Android system, vendor and nvdata partitions supply the positioning
+runtime and factory calibration through read-only mounts. See
+[GPS setup, verification and rollback](GPS.md).
+
 ## Front charging indicator
 
 `livi-charge-led.service` starts with the kiosk and checks MT6360 every two

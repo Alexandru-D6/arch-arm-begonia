@@ -1,0 +1,32 @@
+// SPDX-License-Identifier: GPL-2.0
+/* GPIO74 and state names follow Xiaomi's xiaomi-mt6785-common.dtsi. */
+&pio {
+	gpslna_pins_init: gpslna-init {
+		pins_cmd_dat {
+			pinmux = <PINMUX_GPIO74__FUNC_GPIO74>;
+			bias-disable;
+			output-low;
+		};
+	};
+	gpslna_pins_oh: gpslna-high {
+		pins_cmd_dat {
+			pinmux = <PINMUX_GPIO74__FUNC_GPIO74>;
+			output-high;
+		};
+	};
+	gpslna_pins_ol: gpslna-low {
+		pins_cmd_dat {
+			pinmux = <PINMUX_GPIO74__FUNC_GPIO74>;
+			output-low;
+		};
+	};
+};
+
+&consys {
+	pinctrl-names = "default", "gps_lna_state_init",
+		"gps_lna_state_oh", "gps_lna_state_ol";
+	pinctrl-0 = <&gpslna_pins_init>;
+	pinctrl-1 = <&gpslna_pins_init>;
+	pinctrl-2 = <&gpslna_pins_oh>;
+	pinctrl-3 = <&gpslna_pins_ol>;
+};

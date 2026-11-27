@@ -15,7 +15,8 @@ for name in begonia-connectivity.patch begonia-wifi-irq-logging.patch \
     begonia-wifi-mgmt-registration.patch begonia-wifi-regulatory.patch \
     begonia-wifi-channel-notify.patch begonia-wifi-sae-rsnxe.patch \
     begonia-wifi-get-channel.patch \
-    begonia-bluetooth-hci.patch begonia-bluetooth-quirks.patch; do
+    begonia-bluetooth-hci.patch begonia-bluetooth-quirks.patch \
+    begonia-gps-stp.patch; do
     patch_file="$script_dir/kernel-patches/$name"
     if patch --batch --silent --forward --dry-run -p1 < "$patch_file" >/dev/null 2>&1; then
         patch --batch --silent --forward -p1 < "$patch_file"
@@ -28,3 +29,11 @@ for name in begonia-connectivity.patch begonia-wifi-irq-logging.patch \
 done
 install -m644 "$script_dir/kernel-overlay/drivers/misc/mediatek/connectivity/common/hci_stp.c" \
     drivers/misc/mediatek/connectivity/common/hci_stp.c
+install -m644 "$script_dir/kernel-overlay/drivers/misc/mediatek/connectivity/common/gps_stp.c" \
+    drivers/misc/mediatek/connectivity/common/gps_stp.c
+install -m644 "$script_dir/kernel-overlay/arch/arm64/boot/dts/mediatek/mt6785-begonia-gps.dtsi" \
+    arch/arm64/boot/dts/mediatek/mt6785-begonia-gps.dtsi
+dts=arch/arm64/boot/dts/mediatek/mt6785-xiaomi-begonia.dts
+if ! grep -qxF '#include "mt6785-begonia-gps.dtsi"' "$dts"; then
+    printf '\n#include "mt6785-begonia-gps.dtsi"\n' >> "$dts"
+fi

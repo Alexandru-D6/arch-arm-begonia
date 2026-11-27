@@ -44,6 +44,7 @@ jobs:
           sh -n rootfs/connectivity/begonia-wifi rootfs/connectivity/begonia-hotspot-test
           sh -n initramfs/charge-only.sh
           bash -n rootfs/install-livi.sh rootfs/livi/livi-power.sh
+          bash -n rootfs/install-gps.sh scripts/build-gps-runtime.sh
           sh -n rootfs/livi/upstream/livi-touch-filter
 
       - name: Install deps
@@ -273,6 +274,13 @@ jobs:
           test -x mnt/home/alarm/LIVI/LIVI.AppImage
           test -L mnt/etc/systemd/system/multi-user.target.wants/livi-kiosk.service
           test "$(readlink mnt/etc/systemd/system/getty@tty1.service)" = /dev/null
+
+      - name: Build and install begonia internal GPS adapters
+        run: |
+          bash scripts/build-gps-runtime.sh "${ANDROID_NDK_HOME:?Android NDK is required}" "$RUNNER_TEMP/begonia-gps"
+          sudo bash rootfs/install-gps.sh "$GITHUB_WORKSPACE/mnt" alarm "$RUNNER_TEMP/begonia-gps"
+          test -x mnt/usr/local/lib/begonia-gps/begonia-gps
+          test -L mnt/etc/systemd/system/livi-kiosk.service.wants/begonia-gps.service
 
       - name: Cleanup & release
         run: |

@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+"""Give LIVI a serial NMEA stream from begonia's stock positioning engine."""
+import argparse
+import json
+import os
+from pathlib import Path
+import shutil
+import signal
+import socket
+import subprocess
+import time
+
+OUTPUT = Path("/run/begonia-gps")
+ROOT = Path("/run/begonia-gps-root")
+STATE = Path("/var/lib/begonia-gps")
+ASSETS = Path("/usr/local/lib/begonia-gps")
+stopping = False
+
+
+def run(*args):
+    subprocess.run(args, check=True)
+
+
+def mount(source, target, options=None):
+    target.mkdir(parents=True, exist_ok=True)
+    if options:
+        run("mount", "-o", options, str(source), str(target))
+    else:
+        run("mount", "--bind", str(source), str(target))
+
+
+def prepare():
+    """All mounts live in the service's private mount namespace."""
+    ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(ROOT, 0o700)
+    mount("/dev/disk/by-partlabel/vendor", ROOT / "stock-vendor", "ro,noload")
+    mount("/dev/disk/by-partlabel/system", ROOT / "stock-system", "ro,noload")
+    system = ROOT / "stock-system"
+    if (system / "system/apex").is_dir():
+        system /= "system"
+    mount(system, ROOT / "system")
+    mount(ROOT / "stock-vendor", ROOT / "vendor")
+    mount(system / "apex", ROOT / "apex")
+    mount("/proc", ROOT / "proc")
+    if not (ROOT / "vendor/bin/mnld").is_file():
+        raise RuntimeError("The stock vendor partition has no mnld GPS engine")
+    if not (ROOT / "apex/com.android.runtime/bin/linker").is_file():
+        raise RuntimeError("The stock system partition has no Android runtime loader")
+    STATE.mkdir(mode=0o700, parents=True, exist_ok=True)
+    (STATE / "vendor/gps").mkdir(mode=0o700, parents=True, exist_ok=True)
+    mount(STATE, ROOT / "data")
+    # Preserve the factory GPS calibration. The engine only reads this mount.
+    mount("/dev/disk/by-partlabel/nvdata", ROOT / "mnt/vendor/nvdata", "ro,noload")
+    mount(OUTPUT, ROOT / "run/begonia-gps")
+    # Expose no Android binder devices: without Android's service managers,
+    # libhidlbase waits indefinitely for the sensor service during GPS startup.
+    dev = ROOT / "dev"
+    dev.mkdir(exist_ok=True)
+    for name in ("null", "zero", "random", "urandom"):
+        path = dev / name
+        path.touch()
+        # /run is nodev: bind the real device, rather than creating a node.
+        run("mount", "--bind", f"/dev/{name}", str(path))
+    mount("/dev/pts", dev / "pts")
+    (dev / "ptmx").symlink_to("pts/ptmx")
+    gps = dev / "stpgps"
+    gps.touch()
+    run("mount", "--bind", "/dev/stpgps", str(gps))
+    # The standalone engine needs neither Android sensor fusion nor a modem.
+    odm = ROOT / "odm/etc"
+    odm.mkdir(parents=True, exist_ok=True)
+    (odm / "mpe.conf").write_text(
+        "mpe_enable=0\nprint_rawdata=0\nauto_calib=0\nindoor_enable=0\nudr_enable=0\n")
+    for name in ("begonia-gps-nmea", "begonia-gps-properties32.so", "begonia-gps-properties64.so"):
+        shutil.copyfile(ASSETS / name, ROOT / name)
+    os.chmod(ROOT / "begonia-gps-nmea", 0o755)
+
+
+def enter_root():
+    os.chroot(ROOT)
+    os.chdir("/")
+
+
+def start_android(bits, executable, *args):
+    lib = "lib64" if bits == 64 else "lib"
+    env = dict(os.environ,
+               LD_PRELOAD=f"/begonia-gps-properties{bits}.so",
+               LD_LIBRARY_PATH=f"/vendor/{lib}:/system/{lib}:"
+               f"/apex/com.android.runtime/{lib}/bionic:"
+               f"/apex/com.android.vndk.current/{lib}")
+    loader = "/apex/com.android.runtime/bin/linker" + ("64" if bits == 64 else "")
+    return subprocess.Popen([loader, executable, *args], env=env, preexec_fn=enter_root)
+
+
+def hal_ready():
+    # MediaTek binds sizeof(sockaddr_un), including trailing NUL padding.
+    address = b"\0mtk_hal2mnl".ljust(108, b"\0")
+    with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as probe:
+        try:
+            probe.connect(address)
+            return True
+        except OSError:
+            return False
+
+
+def enabled(config):
+    try:
+        values = json.loads(config.read_text())
+        return values.get("gpsEnabled") is True and values.get("gpsDevice") == str(OUTPUT / "nmea")
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def stop(process):
+    if process is None:
+        return
+    if process.poll() is None:
+        process.terminate()
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            process.kill()
+    process.wait()
+
+
+def serve(config):
+    daemon = client = None
+    try:
+        while not stopping:
+            if enabled(config):
+                if daemon is None:
+                    daemon = start_android(32, "/vendor/bin/mnld")
+                    deadline = time.monotonic() + 20
+                    while not hal_ready():
+                        if stopping or not enabled(config):
+                            break
+                        if daemon.poll() is not None or time.monotonic() > deadline:
+                            raise RuntimeError("The GPS engine did not open its HAL socket")
+                        time.sleep(0.2)
+                    if not stopping and enabled(config):
+                        client = start_android(64, "/begonia-gps-nmea", "/run/begonia-gps/nmea")
+                    else:
+                        stop(daemon)
+                        daemon = None
+                        continue
+                if daemon.poll() is not None or (client and client.poll() is not None):
+                    raise RuntimeError("The GPS engine or NMEA adapter stopped")
+            elif daemon:
+                stop(client)
+                client = None
+                stop(daemon)
+                daemon = None
+                (OUTPUT / "nmea").unlink(missing_ok=True)
+            time.sleep(0.5)
+    finally:
+        stop(client)
+        stop(daemon)
+        (OUTPUT / "nmea").unlink(missing_ok=True)
+
+
+def on_signal(_signum, _frame):
+    global stopping
+    stopping = True
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--config", type=Path, required=True)
+    args = parser.parse_args()
+    signal.signal(signal.SIGTERM, on_signal)
+    signal.signal(signal.SIGINT, on_signal)
+    run("modprobe", "gps_stp")
+    prepare()
+    serve(args.config)
+
+
+if __name__ == "__main__":
+    main()
